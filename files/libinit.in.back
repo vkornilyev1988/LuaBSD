@@ -1,0 +1,138 @@
+#!/bin/lua
+multilogin=arg[1]
+if  system.kenv_get("lua_init") == nil then
+system.clear();
+pcall(dofile, "/lib/shell.lib")
+pcall(term.color, 32)
+print("Starintg init");
+ifnet.setip("lo0",4,"127.0.0.1","255.255.255.0");
+pcall(ifdofile, "/etc/rc.local");
+pcall(term.color, 0)
+ifdofile("/lib/subr.lib")
+
+system.kenv_set("kcs.zfs.cfg.path", "zdata/cfg")
+system.kenv_set("kcs.bdb.path", "/data/db")
+zfs.zpool_import('zdata', {force='true', no_mount='true'});
+cfg:mount();
+cfg:load();
+cfg:umount();
+
+pcall(dofile,"/lib/ssl_check.lib")
+ssl_check();
+
+	if exists("/etc/rc.json") == 0 then
+		rcload_json("/etc/rc.json")
+		cfg.ngraph:load()
+	else
+		--if check_if_first() then
+	        zfs.ds_update(system.kenv_get('kcs.zfs.cfg.path'), { 
+				['kernel:modules'] = 'usb ohci uhci ehci if_em if_igb if_tap ipfw ipfw_nat dummynet netgraph ng_ether ng_bridge ng_vlan ng_eiface ng_hole',
+				['net:hostname'] = 'LuaBSD',
+				
+				['daemond:count'] = '3',
+				
+				['daemond:1:name'] = 'shellinaboxd', 
+				['daemond:1:comment'] = 'Shell In A Box', 
+				['daemond:1:enable'] = 'true', 
+				['daemond:1:type'] = 'BSD', 
+				['daemond:1:command'] = '/bin/shellinaboxd', 
+				['daemond:1:args'] = '-p 4500 -c /etc/ssl -s /:root:wheel:/root:/bin/shell', 
+
+				['daemond:2:name'] = 'easywebserver', 
+				['daemond:2:comment'] = 'Easywebserver', 
+				['daemond:2:enable'] = 'true', 
+				['daemond:2:type'] = 'BSD', 
+				['daemond:2:command'] = '/bin/php', 
+				['daemond:2:args'] = '/apps/easywebserver.app/srv.php start -P ', 
+
+				['daemond:3:name'] = 'zfwrules', 
+				['daemond:3:comment'] = 'IPFW Rules autostart load', 
+				['daemond:3:enable'] = 'true', 
+				['daemond:3:type'] = 'LUA', 
+				['daemond:3:command'] = '/lib/zfwriles.lib',  
+
+				['net:route_default'] = '6.6.6.222',
+				['net:route_default:status'] = '1',
+
+				['net:ifconfig_rename'] = 'em0,em1,em2,em3,em4,em5,igb0,igb1',
+				['net:ifconfig:em0_enable'] = 'true',
+				['net:ifconfig:em0_type'] = '2',
+				['net:ifconfig:em0_create'] = 'false',
+				['net:ifconfig:em0_name'] = 'net0',
+				['net:ifconfig:em0_flags'] = 'up',
+
+				['net:ifconfig:em1_enable'] = 'true',
+				['net:ifconfig:em1_type'] = '2',
+				['net:ifconfig:em1_create'] = 'false',
+				['net:ifconfig:em1_name'] = 'net1',
+				['net:ifconfig:em1_flags'] = 'up',
+
+				['net:ifconfig:em2_enable'] = 'true',
+				['net:ifconfig:em2_type'] = '2',
+				['net:ifconfig:em2_create'] = 'false',
+				['net:ifconfig:em2_name'] = 'net2',
+				['net:ifconfig:em2_flags'] = 'up',
+
+				['net:ifconfig:em3_enable'] = 'true',
+				['net:ifconfig:em3_type'] = '2',
+				['net:ifconfig:em3_create'] = 'false',
+				['net:ifconfig:em3_name'] = 'net3',
+				['net:ifconfig:em3_flags'] = 'up',
+
+				['net:ifconfig:em4_enable'] = 'true',
+				['net:ifconfig:em4_type'] = '2',
+				['net:ifconfig:em4_create'] = 'false',
+				['net:ifconfig:em4_name'] = 'net4',
+				['net:ifconfig:em4_flags'] = 'up',
+
+				['net:ifconfig:em5_enable'] = 'true',
+				['net:ifconfig:em5_type'] = '2',
+				['net:ifconfig:em5_create'] = 'false',
+				['net:ifconfig:em5_name'] = 'net5',
+				['net:ifconfig:em5_flags'] = 'up',
+
+				['net:ifconfig:igb0_enable'] = 'true',
+				['net:ifconfig:igb0_type'] = '2',
+				['net:ifconfig:igb0_create'] = 'false',
+				['net:ifconfig:igb0_name'] = 'net6',
+				['net:ifconfig:igb0_flags'] = 'up',
+
+				['net:ifconfig:igb1_enable'] = 'true',
+				['net:ifconfig:igb1_type'] = '2',
+				['net:ifconfig:igb1_create'] = 'false',
+				['net:ifconfig:igb1_name'] = 'net7',
+				['net:ifconfig:igb1_flags'] = 'up',
+
+				['net:ifconfig_net0_mac'] = '00:bd:d7:f5:05:00',
+				['net:ifconfig_net1_mac'] = '00:bd:d9:f5:05:01',
+				['net:ifconfig_net2_mac'] = '00:bd:d7:f5:05:02',
+				['net:ifconfig_net3_mac'] = '00:bd:d7:f5:05:03',
+				['net:ifconfig_net4_mac'] = '00:bd:d7:f5:05:04',
+				['net:ifconfig_net5_mac'] = '00:bd:d7:f5:05:05',
+				['net:ifconfig_net6_mac'] = '00:bd:d7:f5:05:06',
+				['net:ifconfig_net7_mac'] = '00:bd:d7:f5:05:07',
+				['net:ifconfig_br0_mac' ] = '00:bd:d7:f5:05:08',
+
+				['net:ifconfig_list'] = 'br0',
+				['net:ifconfig_br0_ip4_aliases'] = '0',
+				['net:ifconfig_br0_ip4_alias_0'] = '6.6.6.220',
+				['net:ifconfig_br0_ip4_netmask_0'] = '255.255.255.0',
+				['system:init'] = 'true'
+
+			});
+		--end
+		rcload_zfs();
+	end
+cfg.ipfw:load()
+
+system.kenv_set("lua_init", "true")
+	if multilogin == "autoboot" then 
+		while true do
+			dofile("lib/login.lib");
+		end
+ 	else
+		system.cmd("/bin/lua -i /lib/shell.lib");
+ 	end
+else
+print("Already initialize")
+end

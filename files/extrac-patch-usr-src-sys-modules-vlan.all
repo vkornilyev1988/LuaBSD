@@ -1,0 +1,401 @@
+--- usr/src/sys/netgraph/ng_vlan.h.orig	2020-01-30 04:08:35.396035000 +0600
++++ usr/src/sys/netgraph/ng_vlan.h	2020-01-30 04:09:20.010490000 +0600
+@@ -26,7 +26,7 @@
+  *
+  * Author: Ruslan Ermilov <ru@FreeBSD.org>
+  *
+- * $FreeBSD: stable/11/sys/netgraph/ng_vlan.h 232825 2012-03-11 19:08:56Z adrian $
++ * $FreeBSD$
+  */
+ 
+ #ifndef _NETGRAPH_NG_VLAN_H_
+@@ -69,40 +69,42 @@
+ 	uint16_t	vid;	/* VID - VLAN Identifier. */
+ 	uint8_t		pcp;	/* PCP - Priority Code Point. */
+ 	uint8_t		cfi;	/* CFI - Canonical Format Indicator. */
++	uint16_t	tcount;
++	uint16_t    trunk[];    /* TRUNK - VLANS Identifiers without encap and decap*/
++};
++
++/* Node configuration structure */
++struct ng_vlan_config {
++	uint16_t	trunk[EVL_VLID_MASK + 1];
++	uint8_t		is_set;
+ };
+ 
+ /* Keep this in sync with the above structure definition.  */
+-#ifdef	NG_VLAN_USE_OLD_VLAN_NAME
+-#define	NG_VLAN_FILTER_FIELDS	{				\
++#define	NG_VLAN_FILTER_FIELDS(trunk)	{		\
+ 	{ "hook",	&ng_parse_hookbuf_type	},		\
+ 	{ "vlan",	&ng_parse_uint16_type	},		\
+ 	{ "vid",	&ng_parse_uint16_type	},		\
+ 	{ "pcp",	&ng_parse_uint8_type	},		\
+ 	{ "cfi",	&ng_parse_uint8_type	},		\
++	{ "tcount",	&ng_parse_uint16_type	},		\
++	{ "trunk",	(trunk)					},		\
+ 	{ NULL }						\
+ }
+-#else
+-#define	NG_VLAN_FILTER_FIELDS	{				\
+-	{ "hook",	&ng_parse_hookbuf_type	},		\
+-	{ "vid",	&ng_parse_uint16_type	},		\
+-	{ "pcp",	&ng_parse_uint8_type	},		\
+-	{ "cfi",	&ng_parse_uint8_type	},		\
+-	{ NULL }						\
+-}
+-#endif
+ 
+ 
+ /* Structure returned by NGM_VLAN_GET_TABLE. */
+ struct ng_vlan_table {
++	uint16_t trunk[EVL_VLID_MASK + 1];
+ 	u_int32_t	n;
+ 	struct ng_vlan_filter filter[];
+ };
+ 
+ /* Keep this in sync with the above structure definition. */
+ #define	NG_VLAN_TABLE_FIELDS	{				\
++	{ "trunk",	&ng_vlan_trunk_farray_type },		\
+ 	{ "n",		&ng_parse_uint32_type },		\
+ 	{ "filter",	&ng_vlan_table_array_type },		\
+ 	{ NULL }						\
+ }
+ 
+-#endif /* _NETGRAPH_NG_VLAN_H_ */
++#endif /* _NETGRAPH_NG_VLAN_H_ */
+\ No newline at end of file
+--- usr/src/sys/netgraph/ng_vlan.c.orig	2020-01-30 04:08:29.132828000 +0600
++++ usr/src/sys/netgraph/ng_vlan.c	2020-01-30 04:09:42.074132000 +0600
+@@ -26,7 +26,7 @@
+  *
+  * Author: Ruslan Ermilov <ru@FreeBSD.org>
+  *
+- * $FreeBSD: stable/11/sys/netgraph/ng_vlan.c 298813 2016-04-29 21:25:05Z pfg $
++ * $FreeBSD$
+  */
+ 
+ #include <sys/param.h>
+@@ -44,7 +44,7 @@
+ 
+ #include <netgraph/ng_message.h>
+ #include <netgraph/ng_parse.h>
+-#include <netgraph/ng_vlan.h>
++#include "ng_vlan.h"
+ #include <netgraph/netgraph.h>
+ 
+ struct ng_vlan_private {
+@@ -54,6 +54,7 @@
+ 	uint32_t	encap_enable;
+ 	uint16_t	encap_proto;
+ 	hook_p		vlan_hook[(EVL_VLID_MASK + 1)];
++	struct ng_vlan_config conf;
+ };
+ typedef struct ng_vlan_private *priv_p;
+ 
+@@ -69,10 +70,28 @@
+ static ng_newhook_t	ng_vlan_newhook;
+ static ng_rcvdata_t	ng_vlan_rcvdata;
+ static ng_disconnect_t	ng_vlan_disconnect;
++#define NG_VLAN_OFFSETOF(s, e) ((char *)&((s *)0)->e - (char *)((s *)0))
+ 
++static int
++ng_vlan_getTrunkCount(const struct ng_parse_type *type,
++	const u_char *start, const u_char *buf)
++{
++	const struct ng_vlan_filter *const vf
++	    = (const struct ng_vlan_filter *)(buf - NG_VLAN_OFFSETOF(struct ng_vlan_filter, trunk));
++
++	return vf->tcount;
++}
+ /* Parse type for struct ng_vlan_filter. */
++static const struct ng_parse_array_info ng_vlan_trunk_array_type_info = {
++	&ng_parse_uint16_type,
++	ng_vlan_getTrunkCount
++};
++static const struct ng_parse_type ng_vlan_trunk_array_type = {
++	&ng_parse_array_type,
++	&ng_vlan_trunk_array_type_info,
++};
+ static const struct ng_parse_struct_field ng_vlan_filter_fields[] =
+-	NG_VLAN_FILTER_FIELDS;
++	NG_VLAN_FILTER_FIELDS(&ng_vlan_trunk_array_type);
+ static const struct ng_parse_type ng_vlan_filter_type = {
+ 	&ng_parse_struct_type,
+ 	&ng_vlan_filter_fields
+@@ -83,12 +102,22 @@
+     const u_char *start, const u_char *buf)
+ {
+ 	const struct ng_vlan_table *const table =
+-	    (const struct ng_vlan_table *)(buf - sizeof(u_int32_t));
++	    (const struct ng_vlan_table *)(buf - NG_VLAN_OFFSETOF(struct ng_vlan_table, filter));
+ 
+ 	return table->n;
+ }
+ 
+ /* Parse type for struct ng_vlan_table. */
++static const struct ng_parse_fixedarray_info
++    ng_vlan_trunk_farray_type_info = {
++	&ng_parse_uint16_type,
++	(EVL_VLID_MASK + 1)
++};
++static const struct ng_parse_type ng_vlan_trunk_farray_type = {
++	&ng_parse_fixedarray_type,
++	&ng_vlan_trunk_farray_type_info,
++};
++
+ static const struct ng_parse_array_info ng_vlan_table_array_info = {
+ 	&ng_vlan_filter_type,
+ 	ng_vlan_getTableLength
+@@ -269,7 +298,8 @@
+ 		switch (msg->header.cmd) {
+ 		case NGM_VLAN_ADD_FILTER:
+ 			/* Check that message is long enough. */
+-			if (msg->header.arglen != sizeof(*vf)) {
++			if (msg->header.arglen < sizeof(*vf))
++			{
+ 				error = EINVAL;
+ 				break;
+ 			}
+@@ -284,6 +314,27 @@
+ 				break;
+ 			}
+ #endif
++			int chtrunk = 0;
++			for(i = 0; i < vf->tcount; i++) {
++				if (vf->trunk[i] != 0 && !(vf->trunk[i] & ~EVL_VLID_MASK)) {
++					chtrunk = 1;
++				} else if (vf->trunk[i] & ~EVL_VLID_MASK) {
++					chtrunk = -1;
++					break;
++				}
++			}
++
++			if (chtrunk < 0) {
++				error = EINVAL;
++				break;
++			} else if (chtrunk == 0 && vf->vid == 0) {
++				error = EINVAL;
++				break;
++			} else if (chtrunk == 1 && vf->vid != 0) {
++				error = EINVAL;
++				break;
++			}
++
+ 			if (vf->vid & ~EVL_VLID_MASK ||
+ 			    vf->pcp & ~7 ||
+ 			    vf->cfi & ~1) {
+@@ -312,6 +363,19 @@
+ 				error = EEXIST;
+ 				break;
+ 			}
++			if (chtrunk == 1) {
++				priv->vlan_hook[0] = hook;
++				priv->conf.is_set = 1;
++				for(i = 0; i < (EVL_VLID_MASK + 1); i++)
++					priv->conf.trunk[i] = 0;
++				for(i = 0; i < vf->tcount; i++)
++					priv->conf.trunk[vf->trunk[i]] = 1;
++
++				NG_HOOK_SET_PRIVATE(hook,
++			    	(void *)(HOOK_VLAN_TAG_SET_MASK |
++			    	EVL_MAKETAG(vf->vid, vf->pcp, vf->cfi)));
++				break;
++			}
+ 			/* Link vlan and hook together. */
+ 			NG_HOOK_SET_PRIVATE(hook,
+ 			    (void *)(HOOK_VLAN_TAG_SET_MASK |
+@@ -342,6 +406,12 @@
+ 
+ 			/* Purge a rule that refers to this hook. */
+ 			priv->vlan_hook[EVL_VLANOFTAG(hook_data)] = NULL;
++			if (0 == EVL_VLANOFTAG(hook_data)) {
++				priv->conf.is_set = 0;
++				for(i = 0; i < (EVL_VLID_MASK + 1); i++)
++					priv->conf.trunk[i] = 0;
++			}
++
+ 			NG_HOOK_SET_PRIVATE(hook, NULL);
+ 			break;
+ 		case NGM_VLAN_DEL_VID_FLT:
+@@ -375,6 +445,11 @@
+ 			    vid));
+ 
+ 			/* Purge a rule that refers to this hook. */
++			if (0 == vid) {
++				priv->conf.is_set = 0;
++				for(i = 0; i < (EVL_VLID_MASK + 1); i++)
++					priv->conf.trunk[i] = 0;
++			}
+ 			priv->vlan_hook[vid] = NULL;
+ 			NG_HOOK_SET_PRIVATE(hook, NULL);
+ 			break;
+@@ -421,6 +496,13 @@
+ 				vf->cfi = EVL_CFIOFTAG(hook_data);
+ 				strncpy(vf->hook_name,
+ 				    NG_HOOK_NAME(hook), NG_HOOKSIZ);
++				if (i == 0) {
++					if (priv->conf.is_set)
++						for (int j = 0; j < (EVL_VLID_MASK + 1); j++) {
++							// printf("%d=%d\n", j, priv->conf.trunk[j]);
++							t->trunk[j] = priv->conf.trunk[j];
++						}
++				}
+ 				vf ++;
+ 				t->n ++;
+ 			}
+@@ -510,6 +592,7 @@
+ 	return (error);
+ }
+ 
++
+ static int
+ ng_vlan_rcvdata(hook_p hook, item_p item)
+ {
+@@ -522,16 +605,17 @@
+ 	struct mbuf *m;
+ 	hook_p dst_hook;
+ 
+-
+ 	NGI_GET_M(item, m);
+ 
+ 	/* Make sure we have an entire header. */
+ 	error = m_chk(&m, ETHER_HDR_LEN);
+-	if (error != 0)
++	if (error != 0){
+ 		goto mchk_err;
++	}
+ 
+ 	eh = mtod(m, struct ether_header *);
+ 	if (hook == priv->downstream_hook) {
++
+ 		/*
+ 		 * If from downstream, select between a match hook
+ 		 * or the nomatch hook.
+@@ -542,8 +626,9 @@
+ 		/* Skip packets without tag. */
+ 		if ((m->m_flags & M_VLANTAG) == 0 &&
+ 		    eh->ether_type != priv->encap_proto) {
+-			if (dst_hook == NULL)
++			if (dst_hook == NULL){
+ 				goto net_down;
++			}
+ 			goto send_packet;
+ 		}
+ 
+@@ -557,12 +642,28 @@
+ 			vid = EVL_VLANOFTAG(m->m_pkthdr.ether_vtag);
+ 		} else { /* eh->ether_type == priv->encap_proto */
+ 			error = m_chk(&m, ETHER_VLAN_HDR_LEN);
+-			if (error != 0)
++			if (error != 0){
+ 				goto mchk_err;
++			}
+ 			evl = mtod(m, struct ether_vlan_header *);
+ 			vid = EVL_VLANOFTAG(ntohs(evl->evl_tag));
+ 		}
+ 
++
++		if (priv->vlan_hook[0] != NULL) {
++			if (priv->conf.is_set == 1) {
++				if (priv->conf.trunk[vid] == 1) {
++					if (evl == NULL) { /* m->m_flags & M_VLANTAG */
++						m->m_pkthdr.ether_vtag = 0;
++						m->m_flags &= ~M_VLANTAG;
++						dst_hook = priv->vlan_hook[0];
++						goto send_packet;
++					}
++				}
++			}
++		}
++
++
+ 		if (priv->vlan_hook[vid] != NULL) {
+ 			/*
+ 			 * VLAN filter: always remove vlan tags and
+@@ -575,10 +676,12 @@
+ 				goto send_packet;
+ 			}
+ 		} else { /* nomatch_hook */
+-			if (dst_hook == NULL)
++			if (dst_hook == NULL){
+ 				goto net_down;
+-			if (evl == NULL || priv->decap_enable == 0)
++			}
++			if (evl == NULL || priv->decap_enable == 0){
+ 				goto send_packet;
++			}
+ 			/* Save tag out-of-band. */
+ 			m->m_pkthdr.ether_vtag = ntohs(evl->evl_tag);
+ 			m->m_flags |= M_VLANTAG;
+@@ -605,10 +708,21 @@
+ 		 * Otherwise, do the VLAN encapsulation.
+ 		 */
+ 		dst_hook = priv->downstream_hook;
+-		if (dst_hook == NULL)
++		if (dst_hook == NULL){
+ 			goto net_down;
++		}
+ 		if (hook != priv->nomatch_hook) {/* Filter hook. */
+ 			hook_data = (uintptr_t)NG_HOOK_PRIVATE(hook);
++
++			if (priv->vlan_hook[0] != NULL) {
++				if (priv->conf.is_set == 1) {
++					eth_vtag = m->m_pkthdr.ether_vtag;
++					if (priv->conf.trunk[eth_vtag] == 1 && eth_vtag != 0) {
++						goto send_packet;
++					}
++				}
++			}
++
+ 			if (IS_HOOK_VLAN_SET(hook_data) == 0) {
+ 				/*
+ 				 * Packet from hook not in filter
+@@ -624,10 +738,12 @@
+ 				m->m_pkthdr.ether_vtag = eth_vtag;
+ 				goto send_packet;
+ 			}
++
+ 		} else { /* nomatch_hook */
+ 			if ((priv->encap_enable & VLAN_ENCAP_FROM_NOMATCH) == 0 ||
+-			    (m->m_flags & M_VLANTAG) == 0)
++			    (m->m_flags & M_VLANTAG) == 0) {
+ 				goto send_packet;
++			}
+ 			/* Encapsulate tagged packet. */
+ 			eth_vtag = m->m_pkthdr.ether_vtag;
+ 			m->m_pkthdr.ether_vtag = 0;
+@@ -649,12 +765,15 @@
+ 		 *  |-----------| |-- inserted tag --| |--------------------|
+ 		 */
+ 		M_PREPEND(m, ETHER_VLAN_ENCAP_LEN, M_NOWAIT);
+-		if (m == NULL)
++		if (m == NULL){
+ 			error = ENOMEM;
+-		else
++		}
++		else{
+ 			error = m_chk(&m, ETHER_VLAN_HDR_LEN);
+-		if (error != 0)
++		}
++		if (error != 0){
+ 			goto mchk_err;
++		}
+ 
+ 		evl = mtod(m, struct ether_vlan_header *);
+ 		bcopy(((char *)evl + ETHER_VLAN_ENCAP_LEN),
+@@ -662,7 +781,6 @@
+ 		evl->evl_encap_proto = priv->encap_proto;
+ 		evl->evl_tag = htons(eth_vtag);
+ 	}
+-
+ send_packet:
+ 	NG_FWD_NEW_DATA(error, item, dst_hook, m);
+ 	return (error);
+@@ -707,4 +825,4 @@
+ 	    (NG_NODE_IS_VALID(NG_HOOK_NODE(hook))))
+ 		ng_rmnode_self(NG_HOOK_NODE(hook));
+ 	return (0);
+-}
++}
+\ No newline at end of file

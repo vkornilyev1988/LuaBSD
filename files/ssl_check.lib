@@ -1,0 +1,52 @@
+
+function ssl_check()
+	local sslpath="/etc/ssl"
+	if not system.ls(sslpath, true) then
+		system.mkdir(sslpath, nil, true)
+	end
+
+
+
+	if not system.ls(sslpath.."/default.key", true) or not system.ls(sslpath.."/default.crt", true) then
+		local unpack = table.unpack
+		local pkey = openssl.pkey
+		local nrsa =  {'rsa',2048}
+		local rsa = pkey.new(unpack(nrsa))
+
+		local file = io.open(sslpath.."/default.key", "w")
+		file:write(pkey.export(rsa))
+		io.close(file)
+
+		local cadn = openssl.x509.name.new({{commonName='zbit.kcs'}, {O='KazCyberSystems LLP'}})
+		local req = openssl.x509.req.new(cadn, rsa)
+		req:sign(rsa, 'sha256')
+		local cacert = openssl.x509.new(
+		  os.time(),      --serialNumber
+		  req     --copy name and extensions
+		)
+		cacert:notbefore(os.time())
+		cacert:notafter(os.time() + 3600*24*365)
+		cacert:sign(rsa, cacert)  -- self-signed
+
+		local file = io.open(sslpath.."/default.crt", "w")
+		file:write(cacert:export())
+		io.close(file)
+	end
+	if not system.ls(sslpath.."/certificate.pem", true) and system.ls(sslpath.."/default.key", true) and system.ls(sslpath.."/default.crt", true) then
+		local file = io.open(sslpath.."/default.key", "rb" )
+		local certkey = file:read '*a'
+		file:close()
+		file = io.open(sslpath.."/default.crt", "rb" )
+		local certtls = file:read '*a'
+		file:close()
+		file = io.open(sslpath.."/certificate.pem", "w" )
+		file:write(certkey)
+		file:close()
+		file = io.open(sslpath.."/certificate.pem", "a" )
+		file:write(certtls)
+		file:close()
+		file = nil
+		certtls = nil
+		certkey = nil
+	end
+end

@@ -1,0 +1,3 @@
+{
+	"zpool.create":"zpool:create(\"name\",[devs opt],[params],[fs_props])\n arg1 (name) = Name new zpool \n arg2 disks params: mirror/raidz/stripe <drive1> <drive2> ... \n arg3 (devs opt) Prams: 'force' 'true/false', 'no_feat' = 'true/false', 'root' = 'string', 'mounpoint' = 'string',  'temp_name' = 'string' \n arg4 fs_pros: 'prop'='value' \n example: zpool:create(\"zroot\", \"mirror ada0 ada1 cache ada3\", \"force true mountpoint /data\",\"\""
+}

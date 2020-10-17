@@ -1,0 +1,302 @@
+#!/bin/lua
+
+cnf = {}
+cnf.ipfw = {}
+cnf.openssl = {}
+cnf.dir = {}
+cnf.data = [[
+HOME			= .
+RANDFILE		= $ENV::HOME/.rnd
+oid_section		= new_oids
+[ new_oids ]
+tsa_policy1 = 1.2.3.4.1
+tsa_policy2 = 1.2.3.4.5.6
+tsa_policy3 = 1.2.3.4.5.7
+[ ca ]
+default_ca	= CA_default		# The default ca section
+[ CA_default ]
+dir		= ./demoCA		# Where everything is kept
+certs		= $dir/certs		# Where the issued certs are kept
+crl_dir		= $dir/crl		# Where the issued crl are kept
+database	= $dir/index.txt	# database index file.
+					# several ctificates with same subject.
+new_certs_dir	= $dir/newcerts		# default place for new certs.
+certificate	= $dir/cacert.pem 	# The CA certificate
+serial		= $dir/serial 		# The current serial number
+crlnumber	= $dir/crlnumber	# the current crl number
+					# must be commented out to leave a V1 CRL
+crl		= $dir/crl.pem 		# The current CRL
+private_key	= $dir/private/cakey.pem# The private key
+RANDFILE	= $dir/private/.rand	# private random number file
+x509_extensions	= usr_cert		# The extentions to add to the cert
+name_opt 	= ca_default		# Subject Name options
+cert_opt 	= ca_default		# Certificate field options
+default_days	= 365			# how long to certify for
+default_crl_days= 30			# how long before next CRL
+default_md	= default		# use public key default MD
+preserve	= no			# keep passed DN ordering
+policy		= policy_match
+[ policy_match ]
+countryName		= match
+stateOrProvinceName	= match
+organizationName	= match
+organizationalUnitName	= optional
+commonName		= supplied
+emailAddress		= optional
+[ policy_anything ]
+countryName		= optional
+stateOrProvinceName	= optional
+localityName		= optional
+organizationName	= optional
+organizationalUnitName	= optional
+commonName		= supplied
+emailAddress		= optional
+[ req ]
+default_bits		= 2048
+default_keyfile 	= privkey.pem
+distinguished_name	= req_distinguished_name
+attributes		= req_attributes
+x509_extensions	= v3_ca	# The extentions to add to the self signed cert
+string_mask = utf8only
+[ req_distinguished_name ]
+countryName			= Country Name (2 letter code)
+countryName_default		= AU
+countryName_min			= 2
+countryName_max			= 2
+stateOrProvinceName		= State or Province Name (full name)
+stateOrProvinceName_default	= Some-State
+localityName			= Locality Name (eg, city)
+0.organizationName		= Organization Name (eg, company)
+0.organizationName_default	= Internet Widgits Pty Ltd
+organizationalUnitName		= Organizational Unit Name (eg, section)
+commonName			= Common Name (e.g. server FQDN or YOUR name)
+commonName_max			= 64
+emailAddress			= Email Address
+emailAddress_max		= 64
+[ req_attributes ]
+challengePassword		= A challenge password
+challengePassword_min		= 4
+challengePassword_max		= 20
+unstructuredName		= An optional company name
+[ usr_cert ]
+basicConstraints=CA:FALSE
+nsComment			= "OpenSSL Generated Certificate"
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+[ v3_ca ]
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always,issuer
+basicConstraints = CA:true
+[ crl_ext ]
+authorityKeyIdentifier=keyid:always
+[ proxy_cert_ext ]
+basicConstraints=CA:FALSE
+nsComment			= "OpenSSL Generated Certificate"
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+proxyCertInfo=critical,language:id-ppl-anyLanguage,pathlen:3,policy:foo
+[ tsa ]
+default_tsa = tsa_config1	# the default TSA section
+[ tsa_config1 ]
+dir		= ./demoCA		# TSA root directory
+serial		= $dir/tsaserial	# The current serial number (mandatory)
+crypto_device	= builtin		# OpenSSL engine to use for signing
+signer_cert	= $dir/tsacert.pem 	# The TSA signing certificate
+					# (optional)
+certs		= $dir/cacert.pem	# Certificate chain to include in reply
+					# (optional)
+signer_key	= $dir/private/tsakey.pem # The TSA private key (optional)
+default_policy	= tsa_policy1		# Policy if request did not specify it
+					# (optional)
+other_policies	= tsa_policy2, tsa_policy3	# acceptable policies (optional)
+digests		= md5, sha1		# Acceptable message digests (mandatory)
+accuracy	= secs:1, millisecs:500, microsecs:100	# (optional)
+clock_precision_digits  = 0	# number of digits after dot. (optional)
+ordering		= yes	# Is ordering defined for timestamps?
+				# (optional, default: no)
+tsa_name		= yes	# Must the TSA name be included in the reply?
+				# (optional, default: no)
+ess_cert_id_chain	= no	# Must the ESS cert id chain be included?
+				# (optional, default: no)
+]]
+
+function cnf.openssl:check()
+	if not system.ls('/etc/ssl/openssl.cnf', true) then
+		cnf.file = io.open('/etc/ssl/openssl.cnf', 'w')
+		cnf.file:write(cnf.data)
+		cnf.file:close()
+		cnf.file =nil
+		cnf.data = nil
+		io.flush()
+	end
+end
+
+
+function cnf.dir:check()
+	if not system.ls('/etc/ssl', true) then system.mkdir('/etc/ssl',600,true) end
+end
+
+function cnf.ipfw:load()
+	local cfg_dbpath = system.kenv_get("kcs.bdb.path") or "/db"
+	local data = bdb.get_all("objects", cfg_dbpath);
+	for k,v in pairs(data) do
+		ipfw.table_create('o' .. k);
+		for n, entry in pairs(v.ips) do
+			ipfw.table_add('o' .. k, entry);
+		end
+	end
+	data = bdb.get_all("groups", cfg_dbpath);
+	for k,v in pairs(data) do
+		ipfw.table_create('g' .. k);
+		for obj_n, obj_id in pairs(v.objects) do
+			local obj = bdb.get("objects", cfg_dbpath, obj_id)
+			for n, entry in pairs(obj.ips) do
+				ipfw.table_add('g' .. k, entry);
+			end
+
+			ipfw.table_add('g' .. k, entry);
+		end
+	end
+	data = bdb.get_all("plainnat", cfg_dbpath);
+	for k,v in pairs(data) do
+		ipfw.nat_config(k, v.nat);
+	end
+	data = bdb.get_all("plainpipe", cfg_dbpath);
+	for k,v in pairs(data) do
+		ipfw.pipe_config(k, v.pipe);
+	end
+	data = bdb.get_all("plainqueue", cfg_dbpath);
+	for k,v in pairs(data) do
+		ipfw.queue_config(k, v.queue);
+	end
+	data = bdb.get_all("plainrules", cfg_dbpath);
+	for k,v in pairs(data) do
+		local r = v.rule;
+		r = r:sub(r:find(' ') + 1, r:len())
+		ipfw.rule_add(r);
+	end
+end
+
+cnf.dataset = require 'luabsd'.cfg.init.path
+function cnf.check(dsname)
+	local ds = zfs.ds_list(dsname, {'system:init'})
+	if not ds or ds[dsname]['system:init'] ~= 'true' then
+	zfs.ds_update(cnf.dataset, { 
+		['kernel:modules'] = 'usb ohci uhci ehci if_em if_igb if_tap ipfw ipfw_nat dummynet netgraph ng_ether ng_bridge ng_vlan ng_eiface ng_hole',
+		['net:hostname'] = 'LuaBSD',
+		
+		['daemond:count'] = '3',
+		
+		['daemond:1:name'] = 'shellinaboxd', 
+		['daemond:1:comment'] = 'Shell In A Box', 
+		['daemond:1:enable'] = 'true', 
+		['daemond:1:type'] = 'BSD', 
+		['daemond:1:command'] = '/bin/shellinaboxd', 
+		['daemond:1:args'] = '-p 4500 -c /etc/ssl -s /:root:wheel:/root:/sbin/login',
+
+		['daemond:2:name'] = 'easywebserver', 
+		['daemond:2:comment'] = 'Easywebserver', 
+		['daemond:2:enable'] = 'true', 
+		['daemond:2:type'] = 'BSD', 
+		['daemond:2:command'] = '/bin/php', 
+		['daemond:2:args'] = '/apps/easywebserver.app/srv.php start -P /tmp/run/easywebserver.pid', 
+		['daemond:2:nopid'] = 'true', 
+		['daemond:2:stop'] = '/apps/easywebserver.app/srv.php stop -P /tmp/run/easywebserver.pid', 
+
+		['daemond:3:name'] = 'zfwrules', 
+		['daemond:3:comment'] = 'IPFW Rules autostart load', 
+		['daemond:3:enable'] = 'true', 
+		['daemond:3:type'] = 'LUA', 
+		['daemond:3:command'] = '/lib/zfwriles.lib',  
+
+		['net:route_default'] = '9.9.9.1',
+		['net:route_default:status'] = '1',
+
+		['net:ifconfig_rename'] = 'em0,em1,em2,em3,em4,em5,igb0,igb1,net0,net1,net2,net3,net4,net5,net6,net7',
+		['net:ifconfig:em0_enable'] = 'true',
+		['net:ifconfig:em0_type'] = '2',
+		['net:ifconfig:em0_create'] = 'false',
+		['net:ifconfig:em0_name'] = 'net0',
+
+		['net:ifconfig:em1_enable'] = 'true',
+		['net:ifconfig:em1_type'] = '2',
+		['net:ifconfig:em1_create'] = 'false',
+		['net:ifconfig:em1_name'] = 'net1',
+
+		['net:ifconfig:em2_enable'] = 'true',
+		['net:ifconfig:em2_type'] = '2',
+		['net:ifconfig:em2_create'] = 'false',
+		['net:ifconfig:em2_name'] = 'net2',
+
+		['net:ifconfig:em3_enable'] = 'true',
+		['net:ifconfig:em3_type'] = '2',
+		['net:ifconfig:em3_create'] = 'false',
+		['net:ifconfig:em3_name'] = 'net3',
+
+		['net:ifconfig:em4_enable'] = 'true',
+		['net:ifconfig:em4_type'] = '2',
+		['net:ifconfig:em4_create'] = 'false',
+		['net:ifconfig:em4_name'] = 'net4',
+
+		['net:ifconfig:em5_enable'] = 'true',
+		['net:ifconfig:em5_type'] = '2',
+		['net:ifconfig:em5_create'] = 'false',
+		['net:ifconfig:em5_name'] = 'net5',
+
+		['net:ifconfig:igb0_enable'] = 'true',
+		['net:ifconfig:igb0_type'] = '2',
+		['net:ifconfig:igb0_create'] = 'false',
+		['net:ifconfig:igb0_name'] = 'net6',
+
+		['net:ifconfig:igb1_enable'] = 'true',
+		['net:ifconfig:igb1_type'] = '2',
+		['net:ifconfig:igb1_create'] = 'false',
+		['net:ifconfig:igb1_name'] = 'net7',
+		
+		['net:ifconfig:net0_enable'] = 'true',
+		['net:ifconfig:net0_flags'] = 'up',
+		['net:ifconfig:net1_enable'] = 'true',
+		['net:ifconfig:net1_flags'] = 'up',
+		['net:ifconfig:net2_enable'] = 'true',
+		['net:ifconfig:net2_flags'] = 'up',
+		['net:ifconfig:net3_enable'] = 'true',
+		['net:ifconfig:net3_flags'] = 'up',
+		['net:ifconfig:net4_enable'] = 'true',
+		['net:ifconfig:net4_flags'] = 'up',
+		['net:ifconfig:net5_enable'] = 'true',
+		['net:ifconfig:net5_flags'] = 'up',
+		['net:ifconfig:net6_enable'] = 'true',
+		['net:ifconfig:net6_flags'] = 'up',
+		['net:ifconfig:net7_enable'] = 'true',
+		['net:ifconfig:net7_flags'] = 'up',
+
+		['net:ifconfig_net0_mac'] = '00:bd:d7:f5:05:00',
+		['net:ifconfig_net1_mac'] = '00:bd:d9:f5:05:01',
+		['net:ifconfig_net2_mac'] = '00:bd:d7:f5:05:02',
+		['net:ifconfig_net3_mac'] = '00:bd:d7:f5:05:03',
+		['net:ifconfig_net4_mac'] = '00:bd:d7:f5:05:04',
+		['net:ifconfig_net5_mac'] = '00:bd:d7:f5:05:05',
+		['net:ifconfig_net6_mac'] = '00:bd:d7:f5:05:06',
+		['net:ifconfig_net7_mac'] = '00:bd:d7:f5:05:07',
+		['net:ifconfig_br0_mac' ] = '00:bd:d7:f5:05:08',
+
+		['net:ifconfig_list'] = 'br0',
+		['net:ifconfig_br0_enable'] = 'true',
+		['net:ifconfig_br0_flags'] = 'up',
+		['net:ifconfig_br0_ip4_aliases'] = '0',
+		['net:ifconfig_br0_ip4_alias_0'] = '9.9.9.220',
+		['net:ifconfig_br0_ip4_netmask_0'] = '255.255.255.0',
+		['system:init'] = 'true'
+
+	});
+
+	end
+end
+cnf.check(cnf.dataset)
+cnf.ipfw:load()
+print("RC LOCAL IPFW")
+cnf.dir:check()
+cnf.openssl:check()

@@ -1,0 +1,410 @@
+#!/bin/lua
+term=require("plterm")
+term.color(32)
+print("Shell lua implimentation BSD");
+term.color(0)
+_LIBPATH_ = "/lib"
+
+function iface_wait(iface, time)
+	local count = 0
+	if time == nil then time = 10 end
+		print("COUNT: ",count,"TIME: ",time)
+	while ifnet.info(iface)[iface] == nil do
+		util.sleep(1)
+		print("ZHDEM ", iface, " ", time)
+		count = count + 1
+		if count == time then break end 
+	end 
+end
+
+function ipshow(...)
+term.color(32)
+
+--[[	
+	for i = 1, select("#", ...) do
+		a = select(i,...)
+		print(a)
+	end
+--]]
+
+	arg = {...}
+	arg.n = #{...}
+ local a,a1,a2,b
+ local il = ifnet.list();
+ if arg.n == 0 then
+
+ 	for a,b in pairs(il) do 
+ 		for a1,a2 in pairs(ifnet.info(a)) do 
+ 			print(a1); 
+ 			if b == 0 then
+ 				print("\tstatus:\tno carrier "..b)
+ 			elseif b == 1 then
+ 				print("\tstatus:\tactive "..b)
+ 			else
+ 				print("\tstatus:\terror "..b)
+ 			end
+ 				for an1,an2 in pairs(a2) do 
+ 					print("\t" .. an1,an2); 
+ 					if (an1 == "groups") then
+ 						local an3,an4
+ 						for an3,an4 in pairs(an2) do
+ 							print("\t\t" .. an4)
+ 						end
+ 					elseif (an1 == "flags") then
+ 						local an3,an4
+ 						for an3,an4 in pairs(an2) do
+ 							print("\t\tflags: " .. an4)
+ 						end
+ 					elseif (an1 == "nd6") then
+ 						local an3,an4
+ 						for an3,an4 in pairs(an2) do
+ 							print("\t\tnd6: " .. an4)
+ 						end
+ 					elseif (an1 == "ip4") then
+ 						local an3,an4
+ 						for an3,an4 in pairs(an2) do
+ 							print("\t\tip: " .. an4.ip .. " netmask: " .. an4.netmask .. " broadcast: " .. an4.broadcast)
+ 						end
+ 					elseif (an1 == "ip6") then
+ 						local an3,an4
+ 						for an3,an4 in pairs(an2) do
+ 							print("\t\tip: " .. an4.ip .. " prefix: " .. an4.prefix)
+ 						end
+ 					
+ 					end
+
+ 				end 
+ 		end 
+ 	end
+elseif arg.n == 1 then
+
+ 		for a1,a2 in pairs(ifnet.info(arg[1])) do 
+ 			print(a1);
+ 			b = il[a1];
+ 			if b == 0 then
+ 				print("\tstatus:\tno carrier")
+ 			elseif b == 1 then
+ 				print("\tstatus:\tactive")
+ 			else
+ 				print("\tstatus:\terror")
+ 			end
+ 				for an1,an2 in pairs(a2) do 
+ 					print("\t" .. an1,an2); 
+ 					if (an1 == "groups") then
+ 						local an3,an4
+ 						for an3,an4 in pairs(an2) do
+ 							print("\t\t" .. an4)
+ 						end
+ 					elseif (an1 == "flags") then
+ 						local an3,an4
+ 						for an3,an4 in pairs(an2) do
+ 							print("\t\tflags: " .. an4)
+ 						end
+ 					elseif (an1 == "nd6") then
+ 						local an3,an4
+ 						for an3,an4 in pairs(an2) do
+ 							print("\t\tnd6: " .. an4)
+ 						end
+ 					elseif (an1 == "ip4") then
+ 						local an3,an4
+ 						for an3,an4 in pairs(an2) do
+ 							print("\t\tip: " .. an4.ip .. " netmask: " .. an4.netmask .. " broadcast: " .. an4.broadcast)
+ 						end
+ 					elseif (an1 == "ip6") then
+ 						local an3,an4
+ 						for an3,an4 in pairs(an2) do
+ 							print("\t\tip: " .. an4.ip .. " prefix: " .. an4.prefix)
+ 						end
+ 					
+ 					end
+
+ 				end 
+ 		end 
+
+else
+	print("error: not found arguments")
+end
+term.color(0)
+end
+
+function hostname(name)
+	if name == nil then return(sysctl.get("kern.hostname")) else pcall(system.hostname, name) end
+end
+
+function routeadd(rtype,proto,ip, static_type, static_dest)
+	if rtype == "gw" then
+		print ("GW " .. rtype .. " " .. proto .. " " .. ip)
+		ifnet.route_add(proto,ip)
+	elseif rtype == "static" then
+		if proto == 4  then
+			if static_type and static_dest then
+				ifnet.route_add_static4(static_type, static_dest, ip);
+			end
+		else
+			print ("not function" .. rtype .. " " .. proto .. " " .. ip)
+		end
+	else
+		print ("error: not found arguments")
+	end
+end
+
+function exists(path)
+	if path == nil then print("error: not found arguments") else if system.ls(path,true) == nil then return(1) else return(0) end end
+end
+
+function disklist()
+	result=sysctl.get("kern.disks")
+	return(result)
+	-- body
+end
+zpool = {}
+
+function zpool:create(namezpool,argdevs,argopt,fs_props)
+				local token
+				local count = 0
+				local zpoolargs = {
+								zpoolname = namezpool,
+								devs = {},
+								args = {}
+							}
+
+				for token in string.gmatch(argdevs, "[^%s]+") do
+					if token == "mirror" or token == "stripe" or token == "cache" then
+						col = 0
+						count = count + 1
+						zpoolargs.devs[count] = {}
+						zpoolargs.devs[count]['type'] = token
+						zpoolargs.devs[count]['is_log'] = 0
+						zpoolargs.devs[count]['devs'] = {}
+					else
+						col = col + 1
+						zpoolargs.devs[count]['devs'][col] = token
+					end
+				end
+				token = nil
+				count = nil
+				local token
+				for token in string.gmatch(argopt, "[^%s]+") do
+					if token == "force" then
+						zpoolargs.args.force = "true"
+					elseif token == "no_feat" then
+						zpoolargs.args.no_feat = "true"
+					elseif token == "root" then
+						root_arg=true
+					elseif token == "mountpoint" then
+						mountpoint_arg=true
+					elseif token == "temp_name" then
+						temp_name_arg=true
+					elseif root_arg == true then
+						zpoolargs.args.root = token
+						root_arg = nil
+					elseif mountpoint_arg == true then
+						zpoolargs.args.mountpoint = token
+						mountpoint_arg = nil
+					elseif temp_name_arg == true then
+						zpoolargs.args.temp_name = token
+						temp_name_arg = nil
+					end
+				end
+				token = nil
+				local token
+				zfs.zpool_create(zpoolargs.zpoolname, zpoolargs.devs, zpoolargs.args, fs_props);
+
+
+
+end
+
+function getram()
+local result=math.floor(sysctl.get("hw.realmem")/1024/1024).."m"
+return(result)
+end
+
+info={
+	disks=disklist,
+	ram=getram
+}
+
+ip = {
+	show=ipshow,
+	set=ifnet.setip,
+	del=ifnet.delip,
+	clear=ifnet.clear,
+	rename=ifnet.rename,
+	link=ifnet.setmac,
+	cap=ifnet.ifcap,
+	flags=ifnet.flags,
+	list=ifnet.list,
+	dhcp=ifnetdhcp,
+	create=ifnet.create,
+	destroy=ifnet.destroy,
+	vnet=ifnet.vnet,
+	vnetd=ifnet.vnetd,
+	help="function params:\n\t\tip.show() - all intarfaces\n\t\tip.show(<ifname>) - show information one interface \n\t\texample: ifconfig(tap0) or ifconfig()"
+}
+
+ngctl = {}
+
+function ngctl:show()
+        tb = netgraph.list();
+        local k,v,k1,v1
+        for k,v in pairs(tb) do
+                print("Name: " .. k .. "\t\t\tType: " .. v.type)
+                if (v.hooks) then
+                        print("\tLocal hook\tPeer hook\tPeer name\tPeer type")
+                        for k1, v1 in pairs(v.hooks) do
+                                print("\t" .. v1.ourhook .. "\t\t" .. v1.peerhook .. "\t\t" .. v1.peername .. "\t\t" .. v1.peertype)
+                        end
+                end
+                print("-------------------------------------------------------------------------")
+        end
+end
+
+function ifnetdhcp(iface)
+	if iface == nil then print("error: not found arguments") else system.cmd("/bin/dhclient "..iface) end
+end
+
+function move (source,target)
+	if exists(source) == 0 then
+		if system.cp(source, target) then
+			system.rm(source)
+		else
+			term.color(31)
+			print("error: copyng not complited")
+		end
+	end
+end
+
+function ifdofile(path)
+	if path ~= nil then if exists(path) == 0 then dofile(path) end end
+end
+
+function cat(path)
+	if path ~= nil then if exists(path) == 0 then 
+			local file, data 
+			file = io.open(path, "rb")
+			data = file:read "*a"
+			file:close()
+			return (data)
+		end
+	else
+		print("chto to ne tak ",path)
+	end
+end
+
+
+
+function help(var)
+term.color(34)
+	local tmp=var a=nil
+	if tmp == nil then 
+		for a in pairs(_G) do
+			print(_G[a], a)
+		end
+
+	elseif type(tmp) == "table" then 
+		for a,b in pairs(tmp) do 
+			print(a,b); 
+		end
+	elseif type(tmp) == "string" then
+		local file, data
+		print(_LIBPATH_)
+		file = io.open(_LIBPATH_.."/functions.doc", "rb")
+		print(cjson.decode(file:read "*a")[tmp])
+		file:close()
+	elseif type(tmp) == "function" then
+		print("No't avalaible function parse please string get\n exemple: help(\"<value>\")")
+	else
+		print("Don't find help information: ", type(tmp))
+	end
+term.color(0)
+end
+
+daemond = {}
+
+function daemond:start (cmd)
+		  local pid, pidfile
+		  for a,b in pairs(cmd) do print("PAIRS: ",a,b) end
+		  daemon = 	{
+						enable = cmd.enable,
+						name = cmd.name,
+						comment = cmd.comment,
+						command = cmd.command,
+						arg = cmd.args,
+						before = cmd.pre,
+						type = string.lower(cmd.type),
+						pidfile = cmd.pidfile,
+						jail = cmd.jail,
+						check = cmd.check
+					}
+			for a,b in pairs(daemon) do print("DAEMON: ",a,b) end
+	if daemon.enable then
+		if daemon.command then
+			if daemon.comment then
+				term.color(32)
+				print("Starting daemon: ", daemon.comment)
+			elseif daemon.name then
+				print("Starting daemon: ", daemon.name)
+			else
+				print("Starting daemon: ", "Not name")
+			end
+				term.color(0)
+			if daemon.command and daemon.type == "bsd" then
+				if daemon.before then
+					print("Wait to: ", daemon.before)
+				else
+					if daemon.arg then
+						pid=system.execv_nowait(daemon.command, daemon.arg)
+					else
+						pid=system.exec_nowait(daemon.command)
+					end
+					if daemon.pidfile == nil then daemon.pidfile = "/tmp/"..daemon.name..".pid" end
+					if pid and daemon.pidfile then
+						local file
+						file = io.open(daemon.pidfile, "w")
+						file:write(pid)
+						file:close()
+						term.color(36)
+						print(pid,": ", daemon.pidfile, ": [ OK] ")
+						term.color(0)
+					end
+				end
+			end
+		end
+	end
+end
+
+
+
+clear=system.clear
+rm=system.rm
+ren=os.rename
+exit=os.exit
+mktemp=os.tmpname
+date=os.date
+time=os.time
+poweroff=system.shutdown
+shutdown=poweroff
+reboot=system.reboot
+chmod=system.chmod
+mount=system.mount
+pwd=system.pwd
+kldload=system.kldload
+kldstat=system.kldstat
+kldunload=system.kldunload
+mkdir=system.mkdir
+run=system.cmd
+exec=system.exec
+clear=system.clear
+kill=system.kill
+cd=lfs.chdir
+ls=system.ls
+cp=system.cp
+mv=move
+touch=lfs.touch
+fork=system.fork
+sleep=util.sleep
+chroot=system.chroot
+ps=system.ps
+
+
+

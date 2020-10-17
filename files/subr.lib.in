@@ -1,0 +1,345 @@
+
+
+function read_file(path)
+    local file = io.open(path, "rb") -- r read mode and b binary mode
+    if not file then return nil end
+    local content = file:read "*a" -- *a or *all reads the whole file
+    file:close()
+    return content
+end
+
+function check_if_first()
+	local dsname = system.kenv_get('kcs.zfs.cfg.path');
+	if dsname then
+		local ds = zfs.ds_list(dsname, {'system:init'})
+		if ds then
+			if ds[dsname]['system:init'] and ds[dsname]['system:init'] == 'true' then
+				return nil
+			end
+		end
+	end
+	return true
+end
+
+function netmanager (ifaces, route, ifautoname)
+-- RENAME AUTO SEARCH IFACE
+
+	
+	if ifautoname  then 
+		 		iface_wait(next(ip.list()),20)
+		 		ip.rename(next(ip.list()), ifautoname)
+				ip.flags(next(ip.list()), "up")
+				iface_wait(ifautoname,20)
+	end
+
+if ifaces then
+	term.color(32)
+	for a,b in pairs(ifaces) do
+		local count = 1
+		if  b.create then
+			if b.create == true  and b.enable == true then
+				ip.create(a)
+			end
+		end
+	end
+	count = nil
+end
+
+-- RENAME IF IFACE NAME SET NEW IN SETTINGS
+if ifaces then
+	term.color(32)
+	for a,b in pairs(ifaces) do
+		local count = 1
+		if  b.name and b.enable == true then
+			iface_wait(a,20)
+			ip.rename(a, b.name)
+		end
+	end
+	count = nil
+	for a,b in pairs(ifaces) do
+		if b.enable == true and b.ip then
+			local count = 1
+			print("IFACE: ", a)
+			while b.ip[count] do
+					iface_wait(a,20)
+					if b.ip[count] then ip.set(a, b.ip[count].proto, b.ip[count].addr, b.ip[count].mask) end
+					count = count + 1
+			end
+		end
+	end
+	count = nil
+end
+	if route then
+    	if route.gw.enable == true and route.gw.ip4 then routeadd("gw",4,route.gw.ip4); print("Gateway ip4: " .. route.gw.ip4) end
+    	if route.gw.enable == true and route.gw.ip6 then routeadd("gw",6,route.gw.ip6); print("Gateway ip6: " .. route.gw.ip6) end
+    end
+    term.color(0)
+end
+
+function kernel_modules_load(varkldlist)
+    if varkldlist then 
+	   local thread_i
+		   for thread_i in string.gmatch(varkldlist, "[^%s]+") do
+		   		system.kldload(thread_i)
+		   end
+	   thread_i = nil
+ 	end
+end
+
+
+function daemond:load (data)
+	if data then
+		local count = 1
+		while data[count] do
+			daemond:start (data[count])
+			count = count + 1
+		end
+	end
+end
+
+function daemond:load_zfs (dsname, count)
+	count = tonumber(count) -- to integer
+	if dsname and count >= 1 then
+		for n = 1,count do
+			local pref = 'daemond:'..n
+			local ds = zfs.ds_list(dsname, {pref..':name', pref..':comment', pref..':enable', pref..':type', pref..':command', pref..':args'})
+			local data = {}
+			data.name = ds[dsname][pref..':name']
+			data.comment = ds[dsname][pref..':comment']
+			data.type = ds[dsname][pref..':type']
+			data.command = ds[dsname][pref..':command']
+			data.args = ds[dsname][pref..':args']
+			if ds[dsname][pref..':enable'] and ds[dsname][pref..':enable'] == 'true' then
+				data.enable = true;
+			else
+				data.enable = false;
+			end
+			daemond:start (data)
+		end
+	end
+end
+
+
+function rcload_json(path)
+	local file = read_file(path);
+	local cjdata = cjson.decode(file);
+	kernel_modules_load(cjdata.kldlist)
+	if cjdata.hostname then hostname(cjdata.hostname); print("Hostname: " .. cjdata.hostname) end
+	fork(netmanager, cjdata.ifaces, cjdata.route, cjdata.autoifname)
+	if cjdata.daemond then
+		daemond:load (cjdata.daemond)
+	end
+
+end
+
+function netmanager_zfs_if(dsname, ifname)
+	if dsname and ifname then
+		local ds = zfs.ds_list(dsname, {'net:ifconfig_'..ifname..'_ip4_aliases', 'net:ifconfig_'..ifname..'_ip6_aliases'})
+		if ds then
+			for n in string.gmatch(ds[dsname]['net:ifconfig_'..ifname..'_ip4_aliases'], '[^,]*') do
+				local alias = zfs.ds_list(dsname, {'net:ifconfig_'..ifname..'_ip4_alias_'..n, 'net:ifconfig_'..ifname..'_ip4_netmask_'..n})
+				if alias[dsname]['net:ifconfig_'..ifname..'_ip4_alias_'..n] and alias[dsname]['net:ifconfig_'..ifname..'_ip4_netmask_'..n] then
+					iface_wait(ifname, 20)
+					ip.set(ifname, '4', alias[dsname]['net:ifconfig_'..ifname..'_ip4_alias_'..n], alias[dsname]['net:ifconfig_'..ifname..'_ip4_netmask_'..n])
+				end
+			end
+			for n in string.gmatch(ds[dsname]['net:ifconfig_'..ifname..'_ip6_aliases'], '[^,]*') do
+				local alias = zfs.ds_list(dsname, {'net:ifconfig_'..ifname..'_ip6_alias_'..n, 'net:ifconfig_'..ifname..'_ip6_prefix_'..n})
+				if alias[dsname]['net:ifconfig_'..ifname..'_ip6_alias_'..n] and alias[dsname]['net:ifconfig_'..ifname..'_ip6_prefix_'..n] then
+					iface_wait(ifname, 20)
+					ip.set(ifname, '6', alias[dsname]['net:ifconfig_'..ifname..'_ip6_alias_'..n], alias[dsname]['net:ifconfig_'..ifname..'_ip6_prefix_'..n])
+				end
+			end
+		end
+	end
+end
+
+function netmanager_zfs(dsname, ifname_list, route, static_routes)
+	if dsname and ifname_list then
+		for ifname in string.gmatch(ifname_list, '[^,]*') do
+			netmanager_zfs_if(dsname, ifname)
+		end
+	end
+	if route then
+		routeadd("gw", 4, route)
+	end
+	if static_routes and dsname then
+		for r in string.gmatch(static_routes, '[^,]*') do
+			ds = zfs.ds_list(dsname, {'net:route_static_'..r..'_gtw', 'net:route_static_'..r..'_dest', 'net:route_static_'..r..'_type', 'net:route_static_'..r..'_status'})
+			if ds[dsname]['net:route_static_'..r..'_status'] == '1' then
+				routeadd('static', 4, ds[dsname]['net:route_static_'..r..'_gtw'], ds[dsname]['net:route_static_'..r..'_type'], ds[dsname]['net:route_static_'..r..'_dest']);
+			end
+		end
+	end
+end
+
+function netmanager_zfs_rename( dsname, ifs )
+	if dsname and ifs then
+		for ifname in string.gmatch(ifs, '[^,]*') do
+			iface_wait(ifname,20)
+			local ds = zfs.ds_list(dsname, {'net:ifconfig:'..ifname..'_enable','net:ifconfig:'..ifname..'_type','net:ifconfig:'..ifname..'_create','net:ifconfig:'..ifname..'_name'});
+			if ds[dsname]['net:ifconfig:'..ifname..'_create']  and ds[dsname]['net:ifconfig:'..ifname..'_create'] == 'true' then
+				ip.create(ifname);
+			end
+			if ds[dsname]['net:ifconfig:'..ifname..'_name'] then
+				ip.rename(ifname, ds[dsname]['net:ifconfig:'..ifname..'_name']);
+
+				if ds[dsname]['net:ifconfig:'..ifname..'_enable']  and ds[dsname]['net:ifconfig:'..ifname..'_enable'] == 'true' then
+					ip.flags(ds[dsname]['net:ifconfig:'..ifname..'_name'], "up")
+				end
+			else
+				if ds[dsname]['net:ifconfig:'..ifname..'_enable']  and ds[dsname]['net:ifconfig:'..ifname..'_enable'] == 'true' then
+					ip.flags(ifname, "up")
+				end
+			end
+		end
+	end
+end
+
+function rcload_zfs()
+	local dsname = system.kenv_get('kcs.zfs.cfg.path');
+	if dsname then
+		local ds = zfs.ds_list(dsname, {'kernel:modules', 'daemond:count', 'net:hostname', 'net:ifconfig_list', 'net:route_default', 'net:ifconfig_rename', 'net:route_list'}) -- TODO static route
+		if ds then
+			if ds[dsname]['kernel:modules'] then  -- load kernel modules
+				kernel_modules_load(ds[dsname]['kernel:modules'])
+			end
+			if ds[dsname]['net:hostname'] then   -- set hostname
+				hostname(ds[dsname]['net:hostname']); print("Hostname: " .. ds[dsname]['net:hostname'])
+			end
+			if ds[dsname]['net:ifconfig_rename'] then   -- create, rename, up ifaces
+				netmanager_zfs_rename(dsname, ds[dsname]['net:ifconfig_rename']);
+			end
+			cfg.ngraph:load(dsname)      -- load ngraph configs
+			fork(netmanager_zfs, dsname, ds[dsname]['net:ifconfig_list'], ds[dsname]['net:route_default'], ds[dsname]['net:route_list']);   -- set ips to lans and wans, and set default route
+			daemond:load_zfs(dsname, ds[dsname]['daemond:count'])
+		end
+	end
+end
+
+cfg = {}
+cfg.mountpoint = "/cfg"
+cfg.dbpath = "/data/db"
+cfg.ngraph = {}
+cfg.ipfw = {}
+
+function cfg.ngraph:load(dsname)
+	netgraph.load();
+	if dsname then
+		local ng_list = netgraph.list();
+		for k,v in pairs(ng_list) do
+			if v.type == 'vlan' then
+				local mac = nil;
+				for k1,v1 in pairs(v.hooks) do
+					if v1.peertype == 'ether' then
+						netgraph.msg(v1.peername, 'setpromisc', '1')
+						netgraph.msg(v1.peername, 'setautosrc', '0')
+						local ds = zfs.ds_list(dsname, {'net:ifconfig_'..v1.peername..'_mac'});
+						mac = ds[dsname]['net:ifconfig_'..v1.peername..'_mac'];
+					elseif v1.peertype == 'eiface' and v1.peername == 'br0' then
+						local ds = zfs.ds_list(dsname, {'net:ifconfig_'..v1.peername..'_mac'});
+						mac = ds[dsname]['net:ifconfig_'..v1.peername..'_mac'];
+					end
+				end
+				if mac then
+					for k1,v1 in pairs(v.hooks) do
+						if v1.peertype == 'eiface' then
+							ifnet.setmac(v1.peername, mac);
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+
+function cfg.ipfw:load()
+	local data = bdb.get_all("objects", cfg.dbpath);
+	for k,v in pairs(data) do
+		ipfw.table_create('o' .. k);
+		for n, entry in pairs(v.ips) do
+			ipfw.table_add('o' .. k, entry);
+		end
+	end
+	data = bdb.get_all("groups", cfg.dbpath);
+	for k,v in pairs(data) do
+		ipfw.table_create('g' .. k);
+		for obj_n, obj_id in pairs(v.objects) do
+			local obj = bdb.get("objects", cfg.dbpath, obj_id)
+			for n, entry in pairs(obj.ips) do
+				ipfw.table_add('g' .. k, entry);
+			end
+
+			ipfw.table_add('g' .. k, entry);
+		end
+	end
+	data = bdb.get_all("plainnat", cfg.dbpath);
+	for k,v in pairs(data) do
+		ipfw.nat_config(k, v.nat);
+	end
+	data = bdb.get_all("plainpipe", cfg.dbpath);
+	for k,v in pairs(data) do
+		ipfw.pipe_config(k, v.pipe);
+	end
+	data = bdb.get_all("plainqueue", cfg.dbpath);
+	for k,v in pairs(data) do
+		ipfw.queue_config(k, v.queue);
+	end
+	data = bdb.get_all("plainrules", cfg.dbpath);
+	for k,v in pairs(data) do
+		local r = v.rule;
+		r = r:sub(r:find(' ') + 1, r:len())
+		ipfw.rule_add(r);
+	end
+end
+
+
+function cfg:mount()
+	local dsname = system.kenv_get('kcs.zfs.cfg.path');
+	if dsname then
+		local list = zfs.ds_list(dsname);
+		if list and list[dsname] then
+			if not system.ls(cfg.mountpoint, true) then
+				system.mkdir(cfg.mountpoint);
+			end
+			if system.mount('zfs', cfg.mountpoint, dsname) then
+			end
+		else
+			print("ds not found");
+			if list then
+				for k,v in pairs(list) do print(k,v) end
+			end
+		end
+	else
+		print("no kenv value");
+		dsname = system.kenv_get('kcs.ufs.cfg.path');
+		-- ....
+	end
+end
+
+function cfg:load()
+	local path_to = "/etc";
+	local config = system.ls(cfg.mountpoint, true);
+	if config then
+		for k,v in pairs(config) do
+			if k == 1 or k == 2 then
+			else
+				print(k,v,path_to);
+				system.cp(cfg.mountpoint ..'/'.. v, path_to);
+				print(k,v,path_to);
+			end
+		end
+	end
+end
+
+function cfg:umount()
+	system.umount(cfg.mountpoint, true);
+end
+
+
+
+	-- host = cjdata.hostname
+
+    --if host ~= nil then hostname(host) end
+    

@@ -1,0 +1,141 @@
+{
+	"autoifname": "net0",
+	"ifaces":{
+		"tap0":{
+			"enable":true,
+			"create":true,
+			"type":2,
+			"name":"net1"
+		},
+		"tap1":{
+			"enable":true,
+			"create":true,
+			"type":2,
+			"name":"net2"
+		},
+		"tap2":{
+			"enable":true,
+			"create":true,
+			"type":2,
+			"name":"net3"
+		},
+		"tap3":{
+			"enable":true,
+			"create":true,
+			"type":2,
+			"name":"net4"
+		},
+		"tap4":{
+			"enable":true,
+			"create":true,
+			"type":2,
+			"name":"net5"
+		},
+		"tap5":{
+			"enable":true,
+			"create":true,
+			"type":2,
+			"name":"net6"
+		},
+		"tap6":{
+			"enable":true,
+			"create":true,
+			"type":2,
+			"name":"net7"
+		},
+		"tap7":{
+			"enable":true,
+			"create":true,
+			"type":2,
+			"name":"em6"
+		},
+		"lan_p0":{
+			"type":1,
+			"enable":false,
+			"ip":[
+					{
+					"proto":"4",
+					"addr":"6.6.6.220",
+					"mask":"255.255.255.0"
+					}
+				]
+		},
+		"net1":{
+			"enable":true,
+			"type":2,
+			"ip":[
+					{
+					"proto":"4",
+					"addr":"16.16.16.221",
+					"mask":"255.255.255.0"
+					}
+				]
+		}
+	},
+	"route":{
+				"0":{
+					"gw":{
+							"enable":true,
+							"ip4":"6.6.6.222"
+						},
+					"st":[
+							{
+							"enable":false,
+							"type":"1",
+							"dest":"192.168.11.12",
+							"addr":"6.6.6.222"
+							},
+							{
+							"enable":true,
+							"type":"0",
+							"dest":"192.168.12.0/24",
+							"addr":"6.6.6.222"
+							}					
+						]
+
+				},
+				"1":{
+					"gw":{
+							"enable":true,
+							"ip4":"6.6.6.222"
+						},
+					"st":[
+							{
+							"enable":false,
+							"type":"1",
+							"dest":"192.168.11.12",
+							"addr":"6.6.6.222"
+							},
+							{
+							"enable":true,
+							"type":"0",
+							"dest":"192.168.12.0/24",
+							"addr":"6.6.6.222"
+							}					
+						]
+
+				}
+			},
+	"hostname":"LuaBSD",
+	"kldlist":"usb ohci uhci ehci if_re if_em if_tap netgraph ng_ether ng_eiface ng_vlan ng_bridge ng_hole ipfw ipfw_nat dummynet",
+	"daemond":[
+					{
+						"name": "shellinaboxd",
+						"comment": "Shell In A Box",
+						"enable": true,
+						"type": "BSD",
+						"command":"/bin/shellinaboxd",
+						"args":"-p 4500 -c /etc/easywebserver/tls -s /:root:wheel:/root:/bin/shell"
+					},
+					{
+						"name": "ews",
+						"comment": "Easywebserver",
+						"enable": true,
+						"type": "BSD",
+						"command":"/bin/php",
+						"args":"/apps/easywebserver.app/srv.php start -P /var/run/easywebserver.pid",
+						"stop":"apps/easywebserver.app/srv.php start -P /var/run/easywebserver.pid",
+						"nopidfile": true
+					}
+				]
+}

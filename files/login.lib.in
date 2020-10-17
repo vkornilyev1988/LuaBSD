@@ -1,0 +1,52 @@
+
+login = {}
+term=require("plterm")
+login.getpass=require'luabsd'.subr.getpassword
+
+function login.authloginshell()
+
+	posix.unistd.sleep(1)
+	-- system.clear()
+	io.flush()
+	local username,password, result
+	term.color(33)
+	io.write("login: ")
+	term.color(35)
+	username = io.read()
+	term.color(33)
+	io.write("password: ")
+	term.color(35)
+	password = login.getpass()
+	term.color(0)
+	if username and password then 
+		return require 'luabsd'.sec.subr.login(username,password)
+	elseif username and password == nil then
+		return require 'luabsd'.sec.subr.login(username,"")
+	end
+end
+
+function login.check(result)
+	if type(result) == "table" then
+		term.color(32)
+		print("Login: [ * ] [ ACCESS GRANTED ] [ * ]")
+		posix.stdlib.setenv("USER",result.name)
+		posix.stdlib.setenv("UID",result.uid)
+		posix.stdlib.setenv("GID", result.gid)
+		posix.stdlib.setenv("LOGIN_TIME",os.time())
+		posix.stdlib.setenv("USER_SESSION",math.random(os.time()))
+		term.color(0)
+		system.su_cmd(result.uid, result.gid, "shell session "..posix.stdlib.getenv("USER_SESSION"));
+	else
+		term.color(31)
+		print("Login: [/!\\] [ ACCESS DENIED ] [/!\\]")
+		term.color(0)
+		return posix.errno.EACCES
+	end
+	result = nil
+end
+
+function login:main()
+	login.check(login.authloginshell());
+end
+
+return login

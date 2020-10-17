@@ -1,0 +1,37 @@
+#!/bin/lua
+multilogin=arg[1] 
+luabsd = require 'luabsd'
+
+
+
+function luabsdbootinit()
+luabsd.cmd.zfs.zpool_import('zdata', {force='true', no_mount='true'});
+	
+
+
+luabsd.env:read();
+luabsd.env:show();
+luabsd.cmd.zfs:mount('auto');
+luabsd.cmd.ssl:autogen();
+--cfg:save(luabsd.cfg.dir.ssl)
+luabsd.cfg:apply();
+if system.ls("/etc/rc.local", true) then dofile("/etc/rc.local"); else print("Not found"); end
+system.kenv_set("hvm.userspace", "true");
+end
+
+if  not luabsd.subr.toboolean(system.kenv_get("lua_init")) == true then 
+pcall(luabsdbootinit);
+print("boot type: ",arg[1])
+system.kenv_set("lua_init", "true")                                                                                                   
+        if multilogin == "autoboot" and system.ls("/lib/login.lib", true) then                                                                                              
+            	login = require 'login'
+                while true do
+                	login:main();
+                end                                                                                                                   
+        else
+               		system.cmd("shell");                                                                             
+        end
+else                                                                                                                                  
+		print("Already initialize")                                                                                                           
+end     
+return 0

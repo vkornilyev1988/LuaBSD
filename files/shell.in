@@ -1,0 +1,2 @@
+#!/bin/lua
+pcall(dofile, "/lib/login.lib")
