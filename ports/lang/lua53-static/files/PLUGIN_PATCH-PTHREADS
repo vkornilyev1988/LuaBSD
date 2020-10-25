@@ -1,0 +1,555 @@
+--- src/threading.h.orig	2020-01-10 00:31:35.822828000 +0600
++++ src/threading.h	2020-01-10 00:31:43.875392000 +0600
+@@ -109,6 +109,12 @@
+   #include <windows.h>
+   #endif // PLATFORM_WIN32
+   #include <pthread.h>
++  #ifdef PLATFORM_BSD
++  #include <pthread_np.h>
++  #include <string.h>
++  #include <stdint.h>
++  typedef struct _cpuset cpu_set_t;
++  #endif
+ 
+   #ifdef PLATFORM_LINUX
+   # define _MUTEX_RECURSIVE PTHREAD_MUTEX_RECURSIVE_NP
+--- Makefile.orig	2019-12-13 15:44:08.000000000 +0600
++++ Makefile	2020-01-10 00:31:35.599696000 +0600
+@@ -1,265 +1,2 @@
+-#
+-# Lanes/Makefile
+-#
+-#   make
+-#   make test
+-#   make basic|fifo|keeper|...
+-#
+-#   make perftest[-odd|-even|-plain]
+-#   make launchtest
+-#
+-#   make install DESTDIR=path
+-#   make tar|tgz VERSION=x.x
+-#   make clean
+-#
+-
+-MODULE = lanes
+-
+-N=1000
+-
+-_TARGET_DIR=src/lanes
+-TIME=time
+-
+-ifeq "$(findstring MINGW32,$(shell uname -s))" "MINGW32"
+-  # MinGW MSYS on XP
+-  #
+-  _SO=dll
+-  _LUAEXT=.exe
+-  TIME=timeit.exe
+-else
+-  _SO=so
+-  _LUAEXT=
+-endif
+-
+-# Autodetect LUA
+-#
+-LUA=$(word 1,$(shell which lua5.1$(_LUAEXT)) $(shell which lua51$(_LUAEXT)) lua$(_LUAEXT))
+-
+-_TARGET_SO=$(_TARGET_DIR)/core.$(_SO)
+-
+-_PREFIX=LUA_CPATH="./src/?.$(_SO)" LUA_PATH="./src/?.lua;./tests/?.lua"
+-
+-#---
+-all: $(_TARGET_SO)
+-
+-$(_TARGET_SO): src/*.lua src/*.c src/*.h
+-	cd src && $(MAKE) LUA=$(LUA)
+-
+-clean:
+-	cd src && $(MAKE) clean
+-
+-debug:
+-	$(MAKE) clean
+-	cd src && $(MAKE) LUA=$(LUA) OPT_FLAGS="-O0 -g"
+-	@echo ""
+-	@echo "** Now, try 'make repetitive' or something and if it crashes, 'gdb $(LUA) ...core file...'"
+-	@echo "   Then 'bt' for a backtrace."
+-	@echo ""
+-	@echo "   You have enabled core, no?   'ulimit -c unlimited'"
+-	@echo "   On OS X, core files are under '/cores/'"
+-	@echo ""
+-
+-gdb:
+-	@echo "echo *** To start debugging: 'run tests/basic.lua' ***\n\n" > .gdb.cmd
+-	$(_PREFIX) gdb -x .gdb.cmd $(LUA)
+-
+-#--- LuaRocks automated build ---
+-#
+-rock:
+-	cd src && $(MAKE) LUAROCKS=1 CFLAGS="$(CFLAGS)" LIBFLAG="$(LIBFLAG)" LUA=$(LUA)
+-
+-
+-#--- Testing ---
+-#
+-test:
+-	$(MAKE) errhangtest
+-	$(MAKE) irayo_recursive
+-	$(MAKE) irayo_closure
+-	$(MAKE) basic
+-	$(MAKE) cancel
+-	$(MAKE) fifo
+-	$(MAKE) keeper
+-	$(MAKE) timer
+-	$(MAKE) atomic
+-	$(MAKE) cyclic
+-	$(MAKE) objects
+-	$(MAKE) fibonacci
+-	$(MAKE) recursive
+-	$(MAKE) func_is_string
+-	$(MAKE) atexit
+-	$(MAKE) linda_perf
+-	$(MAKE) rupval
+-	$(MAKE) package
+-	$(MAKE) pingpong
+-
+-basic: tests/basic.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-cancel: tests/cancel.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-#
+-# This tries to show out a bug which happens in lane cleanup (multicore CPU's only)
+-#
+-REP_ARGS=-llanes -e "print'say aaa'; for i=1,10 do print(i) end"
+-repetitive: $(_TARGET_SO)
+-	for i in 1 2 3 4 5 6 7 8 9 10 a b c d e f g h i j k l m n o p q r s t u v w x y z; \
+-	   do $(_PREFIX) $(LUA) $(REP_ARGS); \
+-    done
+-
+-repetitive1: $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $(REP_ARGS)
+-
+-fifo: tests/fifo.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-keeper: tests/keeper.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-fibonacci: tests/fibonacci.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-timer: tests/timer.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-atomic: tests/atomic.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-cyclic: tests/cyclic.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-recursive: tests/recursive.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-hangtest: tests/hangtest.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-ehynes: tests/ehynes.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-#require: tests/require.lua $(_TARGET_SO)
+-#	$(_PREFIX) $(LUA) $<
+-
+-objects: tests/objects.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-irayo_recursive: tests/irayo_recursive.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-irayo_closure: tests/irayo_closure.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-finalizer: tests/finalizer.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-errhangtest: tests/errhangtest.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-error-test: tests/error.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-appendud: tests/appendud.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-func_is_string: tests/func_is_string.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-linda_perf: tests/linda_perf.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-atexit: tests/atexit.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-rupval: tests/rupval.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-package: tests/package.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-pingpong: tests/pingpong.lua $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) $<
+-
+-#---
+-perftest-plain: tests/perftest.lua $(_TARGET_SO)
+-	$(MAKE) _perftest ARGS="$< $(N) -plain"
+-
+-perftest: tests/perftest.lua $(_TARGET_SO)
+-	$(MAKE) _perftest ARGS="$< $(N)"
+-
+-perftest-odd: tests/perftest.lua $(_TARGET_SO)
+-	$(MAKE) _perftest ARGS="$< $(N) -prio=+2"
+-
+-perftest-even: tests/perftest.lua $(_TARGET_SO)
+-	$(MAKE) _perftest ARGS="$< $(N) -prio=-2"
+-
+-#---
+-launchtest: tests/launchtest.lua $(_TARGET_SO)
+-	$(MAKE) _perftest ARGS="$< $(N)"
+-
+-_perftest:
+-	$(_PREFIX) $(TIME) $(LUA) $(ARGS)
+-
+-
+-#--- Installing ---
+-#
+-# This is for LuaRocks automatic install, mainly
+-#
+-# LUA_LIBDIR and LUA_SHAREDIR are used by the .rockspec (don't change the names!)
+-#
+-DESTDIR=/usr/local
+-LUA_LIBDIR=$(DESTDIR)/lib/lua/5.1
+-LUA_SHAREDIR=$(DESTDIR)/share/lua/5.1
+-
+-#
+-# AKa 17-Oct: changed to use 'install -m 644' and 'cp -p'
+-#
+-install: $(_TARGET_SO) src/lanes.lua
+-	mkdir -p $(LUA_LIBDIR) $(LUA_LIBDIR)/lanes $(LUA_SHAREDIR)
+-	install -m 644 $(_TARGET_SO) $(LUA_LIBDIR)/lanes
+-	cp -p src/lanes.lua $(LUA_SHAREDIR)
+-
+-
+-#--- Packaging ---
+-#
+-# Make a folder of the same name as tgz, good manners (for the manual
+-# expander)
+-#
+-# "make tgz VERSION=yyyymmdd"
+-#
+-VERSION=
+-
+-tar tgz:
+-ifeq "$(VERSION)" ""
+-	echo "Usage: make tar VERSION=x.x"; false
+-else
+-	$(MAKE) clean
+-	-rm -rf $(MODULE)-$(VERSION)
+-	mkdir $(MODULE)-$(VERSION)
+-	tar c * --exclude=.svn --exclude=.DS_Store --exclude="_*" \
+-	        --exclude="*.tgz" --exclude="*.rockspec" \
+-	        --exclude=lanes.dev --exclude="$(MODULE)-*" --exclude=xcode \
+-		    --exclude="*.obj" --exclude="*.dll" --exclude=timeit.dat \
+-	   | (cd $(MODULE)-$(VERSION) && tar x)
+-	tar czvf $(MODULE)-$(VERSION).tgz $(MODULE)-$(VERSION)
+-	rm -rf $(MODULE)-$(VERSION)
+-	md5sum $(MODULE)-$(VERSION).tgz
+-endif
+-
+-
+-#--- Undocumented ---
+-#
+-
+-# 2.0.1: Running this (instant exit of the main Lua state) occasionally
+-#        segfaults (1:15 or so on OS X PowerPC G4).
+-#
+-require: $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) -e "require '$(MODULE)'"
+-
+-run: $(_TARGET_SO)
+-	$(_PREFIX) $(LUA) -e "require '$(MODULE)'" -i
+-
+-echo:
+-	@echo $(PROGRAMFILES:C=X)
+-
+-.PROXY:	all clean test require debug _nodemo _notest
+-
++all:
++	${MAKE} -C src
+--- src/Makefile.orig	2019-12-13 15:44:08.000000000 +0600
++++ src/Makefile	2020-01-10 00:31:35.600023000 +0600
+@@ -1,164 +1,21 @@
+-#
+-# Lanes/src/Makefile
+-#
+-#   make                                    Manual build
+-#   make LUAROCKS=1 CFLAGS=... LIBFLAG=...  LuaRocks automated build
+-#
+-
+-MODULE=lanes
+-
+-SRC=lanes.c cancel.c compat.c threading.c tools.c linda.c deep.c keeper.c universe.c
+-
+-OBJ=$(SRC:.c=.o)
+-
+-# LuaRocks gives 'LIBFLAG' from the outside
+-#
+-LIBFLAG=-shared
+-
+-OPT_FLAGS=-O2
+-    # -O0 -g
+-
+-_SO=so
+-ifeq "$(findstring MINGW32,$(shell uname -s))" "MINGW32"
+-  _SO=dll
+-endif
+-
+-ifeq "$(LUAROCKS)" ""
+-  ifeq "$(findstring MINGW32,$(shell uname -s))" "MINGW32"
+-    # MinGW MSYS on Windows
+-    #
+-    # - 'lua' and 'luac' expected to be on the path
+-    # - %LUA_DEV% must lead to include files and libraries (Lua for Windows >= 5.1.3.14)
+-    # - %MSCVR80% must be the full pathname of 'msvcr80.dll'
+-    #
+-    ifeq "$(LUA_DEV)" ""
+-      $(error LUA_DEV not defined - try i.e. 'make LUA_DEV=/c/Program\ Files/Lua/5.1')
+-    endif
+-    LUA_FLAGS:=-I "$(LUA_DEV)/include"
+-    LUA_LIBS:="$(LUA_DEV)/lua5.1.dll" -lgcc
+-    LIBFLAG=-shared -Wl,-Map,lanes.map
+-  else
+-    # Autodetect LUA_FLAGS and/or LUA_LIBS
+-    #
+-    ifneq "$(shell which pkg-config)" ""
+-      ifeq "$(shell pkg-config --exists luajit && echo 1)" "1"
+-        LUA_FLAGS:=$(shell pkg-config --cflags luajit)
+-        LUA_LIBS:=$(shell pkg-config --libs luajit)
+-          #
+-          # Debian: -I/usr/include/luajit-2.0
+-          #         -lluajit-5.1
+-      else
+-        ifeq "$(shell pkg-config --exists lua5.1 && echo 1)" "1"
+-          LUA_FLAGS:=$(shell pkg-config --cflags lua5.1)
+-          LUA_LIBS:=$(shell pkg-config --libs lua5.1)
+-            #
+-            # Ubuntu: -I/usr/include/lua5.1 
+-            #         -llua5.1
+-        else
+-          ifeq "$(shell pkg-config --exists lua && echo 1)" "1"
+-            LUA_FLAGS:=$(shell pkg-config --cflags lua)
+-            LUA_LIBS:=$(shell pkg-config --libs lua)
+-              #
+-              # OS X fink with pkg-config:
+-              #      -I/sw/include 
+-              #      -L/sw/lib -llua -lm
+-          else
+-            $(warning *** 'pkg-config' existed but did not know of 'lua[5.1]' - Good luck!)
+-            LUA_FLAGS:=
+-            LUA_LIBS:=-llua
+-          endif
+-        endif
+-      endif
+-    else
+-      # No 'pkg-config'; try defaults
+-      #
+-      ifeq "$(shell uname -s)" "Darwin"
+-        $(warning *** Assuming 'fink' at default path)
+-        LUA_FLAGS:=-I/sw/include
+-        LUA_LIBS:=-L/sw/lib -llua
+-      else
+-        $(warning *** Assuming an arbitrary Lua installation; try installing 'pkg-config')
+-        LUA_FLAGS:=
+-        LUA_LIBS:=-llua
+-      endif
+-    endif
+-  endif
+-
+-  ifeq "$(shell uname -s)" "Darwin"
+-    # Some machines need 'MACOSX_DEPLOYMENT_TARGET=10.3' for using '-undefined dynamic_lookup'
+-    # (at least PowerPC running 10.4.11); does not harm the others
+-    #
+-    CC = MACOSX_DEPLOYMENT_TARGET=10.3 gcc
+-    LIBFLAG = -bundle -undefined dynamic_lookup
+-  endif
+-  
+-  CFLAGS=-Wall -Werror $(OPT_FLAGS) $(LUA_FLAGS)
+-  LIBS=$(LUA_LIBS)
+-endif
+-
+-#---
+-# PThread platform specifics
+-#
+-ifeq "$(shell uname -s)" "Linux"
+-  # -D_GNU_SOURCE needed for 'pthread_mutexattr_settype'
+-  CFLAGS += -D_GNU_SOURCE -fPIC
+-
+-  # Use of -DUSE_PTHREAD_TIMEDJOIN is possible, but not recommended (slower & keeps threads
+-  # unreleased somewhat longer)
+-  #CFLAGS += -DUSE_PTHREAD_TIMEDJOIN
+-
+-  LIBS += -lpthread
+-endif
+-
+-ifeq "$(shell uname -s)" "BSD"
+-  LIBS += -lpthread
+-endif
+-
+-MODULE_DIR=$(MODULE)
+-
+-#---
+-all: $(MODULE)/core.$(_SO)
+-
+-%.o: %.c *.h Makefile
+-
+-# Note: Don't put $(LUA_LIBS) ahead of $^; MSYS will not like that (I think)
+-#
+-$(MODULE_DIR)/core.$(_SO): $(OBJ)
+-	mkdir -p $(MODULE_DIR)
+-	$(CC) $(LIBFLAG) $^ $(LIBS) $(LUA_LIBS) -o $@
+-
+-clean:
+-	-rm -rf $(MODULE)/core.$(_SO) *.o *.map
+-
+-#---
+-# NSLU2 "slug" Linux ARM
+-#
+-nslu2:
+-	$(MAKE) all CFLAGS="$(CFLAGS) -I/opt/include -L/opt/lib -D_GNU_SOURCE -lpthread"
+-
+-#---
+-# Cross compiling to Win32 (MinGW on OS X Intel)
+-#
+-# Point WIN32_LUA51 to an extraction of LuaBinaries dll8 and dev packages.
+-#
+-# Note: Only works on platforms with same endianess (i.e. not from PowerPC OS X,
+-#       since 'luac' uses the host endianess)
+-#
+-# EXPERIMENTAL; NOT TESTED OF LATE.
+-#
+-MINGW_GCC=mingw32-gcc
+-    # i686-pc-mingw32-gcc
+-
+-win32: $(WIN32_LUA51)/include/lua.h
+-	$(MAKE) build CC=$(MINGW_GCC) \
+-            LUA_FLAGS=-I$(WIN32_LUA51)/include \
+-            LUA_LIBS="-L$(WIN32_LUA51) -llua51" \
+-            _SO=dll \
+-            SO_FLAGS=-shared
+-
+-$(WIN32_LUA51)/include/lua.h:
+-	@echo "Usage: make win32 WIN32_LUA51=<path of extracted LuaBinaries dll8 and dev packages>"
+-	@echo "                  [MINGW_GCC=...mingw32-gcc]"
+-	@false
+-
+-.PROXY:	all clean nslu2 win32
++LIB_OBJS=  lanes cancel compat threading tools linda deep keeper universe
++MKDIR!=   whereis -bq mkdir
++CC!=      whereis -bq clang
++CFLAGS?=  -I/usr/include
++AR!=      whereis -bq ar
++
++all:
++	${MKDIR} lanes || true
++	echo "${LIB_OBJS}"
++.for i in ${LIB_OBJS}
++	echo "${i}"
++	${CC} ${CFLAGS} ${i}.c -o ${i}.o -c
++.endfor
++	IN="o" && \
++	${MAKE}  CFLAGS+="-fPIC -shared -pthread" -C ${LUA_PATH} freebsd
++	${AR} -csr lanes/liblanes.a  lanes.o cancel.o compat.o threading.o tools.o linda.o deep.o keeper.o universe.o 
++	${CC} ${CFLAGS}  lanes.o cancel.o compat.o threading.o tools.o linda.o deep.o keeper.o universe.o -o lanes/liblanes.so ${LDFLAGS}
++	${MAKE} CFLAGS+="-fPIC -shared" -C ${LUA_PATH} freebsd clean
++	
++clean: 
++	rm -Rfv *.o
+--- src/tools.c.orig	2020-01-10 00:31:35.823474000 +0600
++++ src/tools.c	2020-01-10 00:31:42.060014000 +0600
+@@ -225,7 +225,7 @@
+ 	// copy settings from from source to destination registry
+ 	if( luaG_inter_move( U, L, L2, 1, eLM_LaneBody) < 0)                           //                           // config
+ 	{
+-		(void) luaL_error( L, "failed to copy settings when loading lanes.core");
++		(void) luaL_error( L, "failed to copy settings when loading pthreads");
+ 	}
+ 	// set L2:_R[CONFIG_REGKEY] = settings
+ 	REGISTRY_SET( L2, CONFIG_REGKEY, lua_insert( L2, -2));                                                      //
+@@ -239,8 +239,8 @@
+ 
+ static int require_lanes_core( lua_State* L)
+ {
+-	// leaves a copy of 'lanes.core' module table on the stack
+-	luaL_requiref( L, "lanes.core", luaopen_lanes_core, 0);
++	// leaves a copy of 'pthreads' module table on the stack
++	luaL_requiref( L, "pthreads", luaopen_lanes_core, 0);
+ 	return 1;
+ }
+ 
+@@ -275,7 +275,7 @@
+ #endif // LUA_JITLIBNAME
+ 
+ 	{ LUA_DBLIBNAME, luaopen_debug},
+-	{ "lanes.core", require_lanes_core}, // So that we can open it like any base library (possible since we have access to the init function)
++	//{ "pthreads", require_lanes_core}, // So that we can open it like any base library (possible since we have access to the init function)
+ 	//
+ 	{ "base", NULL},                     // ignore "base" (already acquired it)
+ 	{ NULL, NULL }
+@@ -286,18 +286,19 @@
+ 	int i;
+ 	for( i = 0; libs[i].name; ++ i)
+ 	{
++		printf("QWEQWE: %s\n", libs[i].name);
+ 		if( strncmp( name_, libs[i].name, len_) == 0)
+ 		{
+ 			lua_CFunction libfunc = libs[i].func;
+ 			name_ = libs[i].name; // note that the provided name_ doesn't necessarily ends with '\0', hence len_
+ 			if( libfunc != NULL)
+ 			{
+-				bool_t const isLanesCore = (libfunc == require_lanes_core) ? TRUE : FALSE; // don't want to create a global for "lanes.core"
++				bool_t const isLanesCore = (libfunc == require_lanes_core) ? TRUE : FALSE; // don't want to create a global for "pthreads"
+ 				DEBUGSPEW_CODE( fprintf( stderr, INDENT_BEGIN "opening %.*s library\n" INDENT_END, (int) len_, name_));
+ 				STACK_CHECK( L, 0);
+ 				// open the library as if through require(), and create a global as well if necessary (the library table is left on the stack)
+ 				luaL_requiref( L, name_, libfunc, !isLanesCore);
+-				// lanes.core doesn't declare a global, so scan it here and now
++				// pthreads doesn't declare a global, so scan it here and now
+ 				if( isLanesCore == TRUE)
+ 				{
+ 					populate_func_lookup_table( L, -1, name_);
+@@ -679,7 +680,7 @@
+ 			// C function: recreate a closure in the new state, bypassing the lookup scheme
+ 			lua_pushcfunction( L, U->on_state_create_func);                             // on_state_create()
+ 		}
+-		else // Lua function located in the config table, copied when we opened "lanes.core"
++		else // Lua function located in the config table, copied when we opened "pthreads"
+ 		{
+ 			if( mode_ != eLM_LaneBody)
+ 			{
+@@ -783,8 +784,8 @@
+ 		{
+ 			DEBUGSPEW_CODE( fprintf( stderr, INDENT_BEGIN "opening ALL standard libraries\n" INDENT_END));
+ 			luaL_openlibs( L);
+-			// don't forget lanes.core for regular lane states
+-			open1lib( DEBUGSPEW_PARAM_COMMA( U) L, "lanes.core", 10);
++			// don't forget pthreads for regular lane states
++			open1lib( DEBUGSPEW_PARAM_COMMA( U) L, "pthreads", 10);
+ 			libs_ = NULL; // done with libs
+ 		}
+ 		else
+@@ -810,7 +811,7 @@
+ 		unsigned int len = 0;
+ 		for( p = libs_; *p; p += len)
+ 		{
+-			// skip delimiters ('.' can be part of name for "lanes.core")
++			// skip delimiters ('.' can be part of name for "pthreads")
+ 			while( *p && !isalnum( *p) && *p != '.')
+ 				++ p;
+ 			// skip name

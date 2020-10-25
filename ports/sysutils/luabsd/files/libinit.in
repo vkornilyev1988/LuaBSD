@@ -1,0 +1,16 @@
+#!/bin/lua
+if  system.kenv_get("lua_init") == nill then
+system.clear();
+pcall(dofile, "/lib/shell.lib")
+pcall(term.color, 32)
+print("Starintg init");
+ifnet.setip("lo0",4,"127.0.0.1","255.255.255.0");
+pcall(ifdofile, "/etc/rc.local");
+pcall(term.color, 0)
+ifdofile("/lib/subr.lib")
+if exists("/etc/rc.json") == 0 then rcload_json("/etc/rc.json") end
+system.kenv_set("lua_init", "true")
+system.cmd("/bin/lua -i /lib/shell.lib");
+else
+print("Already initialize")
+end

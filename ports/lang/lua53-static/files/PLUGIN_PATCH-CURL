@@ -1,0 +1,15 @@
+--- src/l52util.c.orig	2019-09-16 13:43:39.000000000 +0600
++++ src/l52util.c	2019-12-27 01:21:49.230548000 +0600
+@@ -16,11 +16,7 @@
+ 
+ #if LUA_VERSION_NUM >= 502 
+ 
+-int luaL_typerror (lua_State *L, int narg, const char *tname) {
+-  const char *msg = lua_pushfstring(L, "%s expected, got %s", tname,
+-      luaL_typename(L, narg));
+-  return luaL_argerror(L, narg, msg);
+-}
++
+ 
+ #ifndef luaL_register
+ 

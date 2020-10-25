@@ -1,0 +1,10 @@
+#!/bin/lua
+kldload("if_em")
+--ip.rename("em0","net0")
+--ip.rename("re0","net0")
+--ip.set("net0",4,"6.6.6.220","255.255.255.0")
+--ip.flags("net0","up")
+--ip.show("net0")
+-- shellinaboxd="/bin/shellinaboxd -p 4400 -t -s /:root:wheel:/root:/bin/shell"
+-- shellinaboxd_pid=system.exec_nowait(shellinaboxd)
+print("SHELLINABOX PID: " .. shellinaboxd_pid)

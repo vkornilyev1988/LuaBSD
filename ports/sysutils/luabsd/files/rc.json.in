@@ -1,0 +1,51 @@
+{
+	"autoifname": "net0",
+	"ifaces":{
+		"tap0":{
+			"enable":true,
+			"create":true,
+			"type":2,
+			"name":"net1"
+		},
+		"net0":{
+			"type":1,
+			"enable":true,
+			"ip":[
+					{
+					"proto":"4",
+					"addr":"6.6.6.220",
+					"mask":"255.255.255.0"
+					}
+				]
+		},
+		"net1":{
+			"enable":true,
+			"type":2,
+			"ip":[
+					{
+					"proto":"4",
+					"addr":"6.6.6.221",
+					"mask":"255.255.255.0"
+					}
+				]
+		}
+	},
+	"route":{
+		"gw":{
+					"enable":true,
+					"ip4":"6.6.6.222"
+			}
+	},
+	"hostname":"LuaBSD",
+	"kldlist":"usb ohci uhci ehci if_re if_em if_tap",
+	"daemond":[
+					{
+						"name": "shellinaboxd",
+						"comment": "Shell In A Box",
+						"enable": true,
+						"type": "BSD",
+						"command":"/bin/shellinaboxd",
+						"args":"-p 4500 -t -s /:root:wheel:/root:/bin/shell"
+					}
+				]
+}

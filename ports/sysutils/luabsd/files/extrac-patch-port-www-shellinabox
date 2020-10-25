@@ -1,0 +1,557 @@
+--- /dev/null	2019-12-30 21:11:36.000000000 +0600
++++ shellinabox-static/Makefile	2019-12-30 21:13:12.826052000 +0600
+@@ -0,0 +1,57 @@
++# Created by: Olivier Cochard-Labbe <olivier@FreeBSD.org>
++# $FreeBSD: head/www/shellinabox/Makefile 496469 2019-03-21 15:05:14Z olivier $
++
++PORTNAME=	shellinabox
++PORTVERSION=	2.20
++DISTVERSIONPREFIX=	v
++PORTREVISION=	3
++CATEGORIES=	www
++
++MAINTAINER=	olivier@FreeBSD.org
++COMMENT=	Publish command line shell through AJAX interface
++
++LICENSE=	GPLv2
++
++USES=	autoreconf libtool ssl
++
++OPTIONS_DEFINE=	CORES NOLOGIN
++CORES_DESC=	Patch shellinaboxd to enable core dumps
++NOLOGIN_DESC=	Login through ssh (not through login)
++
++GNU_CONFIGURE=	yes
++USE_GITHUB=	yes
++
++USE_RC_SUBR=	shellinaboxd
++USERS?=		shellinabox
++GROUPS?=	shellinabox
++
++PKGDEINSTALL=	${WRKDIR}/pkg-deinstall
++
++SUB_FILES=	pkg-deinstall
++SUB_LIST=	USERS=${USERS} GROUPS=${GROUPS}
++
++CONFIGURE_ARGS=	--disable-runtime-loading --disable-pam \
++		CFLAGS=-I${LOCALBASE}/include LDFLAGS=-L${LOCALBASE}/lib
++
++NOLOGIN_CONFIGURE_ON=	--disable-login
++
++.include <bsd.port.options.mk>
++
++post-patch:
++.if ${PORT_OPTIONS:MCORES}
++	@${REINPLACE_CMD} \
++		-e 's|prctl(PR_SET_DUMPABLE,|// &|' \
++		-e 's|setrlimit(RLIMIT_CORE,|// &|' \
++			${WRKSRC}/shellinabox/shellinaboxd.c
++.endif
++
++post-build:
++	${AR} cr ${WRKSRC}/.libs/libhttp.a ${WRKSRC}/libhttp/hashmap.o ${WRKSRC}/libhttp/trie.o ${WRKSRC}/libhttp/httpconnection.o ${WRKSRC}/libhttp/server.o ${WRKSRC}/libhttp/ssl.o ${WRKSRC}/libhttp/url.o /usr/lib/libssl.a /usr/lib/libz.a /usr/lib/libcrypto.a /usr/lib/libm.a
++	${CC} -g -std=gnu99 -Wall -I/usr/local/include -o ${WRKSRC}/shellinaboxd ${WRKSRC}/shellinabox/shellinaboxd.o ${WRKSRC}/shellinabox/externalfile.o ${WRKSRC}/shellinabox/launcher.o ${WRKSRC}/shellinabox/privileges.o ${WRKSRC}/shellinabox/service.o ${WRKSRC}/shellinabox/session.o \
++	${WRKSRC}/shellinabox/usercss.o ${WRKSRC}/.libs/liblogging.a ${WRKSRC}/.libs/libhttp.a /usr/lib/libssl.a /usr/lib/libz.a /usr/lib/libcrypto.a /usr/lib/libutil.a /usr/lib/libc.a -static
++do-install:
++	${INSTALL_PROGRAM} ${WRKSRC}/shellinaboxd ${STAGEDIR}${PREFIX}/bin
++	${INSTALL_MAN} ${WRKSRC}/shellinaboxd.1 ${STAGEDIR}${MAN1PREFIX}/man/man1
++	@${MKDIR} ${STAGEDIR}${ETCDIR}
++
++.include <bsd.port.mk>
+--- /dev/null	2019-12-30 21:11:36.000000000 +0600
++++ shellinabox-static/distinfo	2019-12-30 21:13:55.659263000 +0600
+@@ -0,0 +1,3 @@
++TIMESTAMP = 1478938927
++SHA256 (shellinabox-shellinabox-v2.20_GH0.tar.gz) = 27a5ec6c3439f87aee238c47cc56e7357a6249e5ca9ed0f044f0057ef389d81e
++SIZE (shellinabox-shellinabox-v2.20_GH0.tar.gz) = 745920
+--- /dev/null	2019-12-30 21:11:36.000000000 +0600
++++ shellinabox-static/pkg-descr	2019-12-30 21:13:55.659190000 +0600
+@@ -0,0 +1,4 @@
++Shell In A Box is a web server that can export arbitary command line tools
++to a web based terminal emulator.
++
++WWW: https://github.com/shellinabox/shellinabox
+--- /dev/null	2019-12-30 21:11:36.000000000 +0600
++++ shellinabox-static/pkg-plist	2019-12-30 21:13:55.659325000 +0600
+@@ -0,0 +1,3 @@
++bin/shellinaboxd
++man/man1/shellinaboxd.1.gz
++@dir(shellinabox,shellinabox,700) etc/shellinabox
+--- /dev/null	2019-12-30 21:11:36.000000000 +0600
++++ shellinabox-static/files/patch-configure.ac	2019-12-30 21:13:55.658496000 +0600
+@@ -0,0 +1,20 @@
++--- configure.ac.orig	2016-11-09 19:40:33 UTC
+++++ configure.ac
++@@ -138,6 +138,17 @@ AC_ARG_ENABLE(runtime-loading,
++                             these libraries into the binary, thus making them a
++                             hard dependency, then disable runtime-loading.])
++ 
+++dnl This changes the order of the top ciphersuites
+++AC_ARG_ENABLE(prefer-chacha,
+++              [  --enable-prefer-chacha    Prefer ChaCha20-Poly1305 ciphersuites over
+++                            AES256-GCM.  For processors without AES-NI or
+++			    similar capabilities, ChaCha20-Poly1305 is 3 times
+++			    faster than AES, with an equivalent strength.])
+++if test "x$enable_prefer_chacha" == xyes; then
+++  AC_DEFINE(SHELLINABOX_USE_CHACHA_FIRST, 1,
+++                                Set if you want to prefer Chacha20-Poly1305 over AES-GCM)
+++fi
+++
++ dnl This is feature is not suported in some standard C libs. So users can use
++ dnl this switch to avoid compile and runtime problems. Note that utmp must
++ dnl disabled on systems with musl libc.
+--- /dev/null	2019-12-30 21:11:36.000000000 +0600
++++ shellinabox-static/files/patch-libhttp_ssl.c	2019-12-30 21:13:55.658569000 +0600
+@@ -0,0 +1,200 @@
++--- libhttp/ssl.c.orig	2016-11-09 19:40:33 UTC
+++++ libhttp/ssl.c
++@@ -117,6 +117,9 @@ SSL_CTX *     (*SSL_CTX_new)(SSL_METHOD *);
++ int           (*SSL_CTX_set_cipher_list)(SSL_CTX *, const char *);
++ void          (*SSL_CTX_set_info_callback)(SSL_CTX *,
++                                            void (*)(const SSL *, int, int));
+++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+++unsigned long (*SSL_CTX_set_options)(SSL_CTX *, unsigned long);
+++#endif
++ int           (*SSL_CTX_use_PrivateKey_file)(SSL_CTX *, const char *, int);
++ int           (*SSL_CTX_use_PrivateKey_ASN1)(int, SSL_CTX *,
++                                              const unsigned char *, long);
++@@ -130,7 +133,9 @@ void *        (*SSL_get_ex_data)(const SSL *, int);
++ BIO *         (*SSL_get_rbio)(const SSL *);
++ const char *  (*SSL_get_servername)(const SSL *, int);
++ BIO *         (*SSL_get_wbio)(const SSL *);
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++ int           (*SSL_library_init)(void);
+++#endif
++ SSL *         (*SSL_new)(SSL_CTX *);
++ int           (*SSL_read)(SSL *, void *, int);
++ SSL_CTX *     (*SSL_set_SSL_CTX)(SSL *, SSL_CTX *);
++@@ -139,10 +144,16 @@ void          (*SSL_set_bio)(SSL *, BIO *, BIO *);
++ int           (*SSL_set_ex_data)(SSL *, int, void *);
++ int           (*SSL_shutdown)(SSL *);
++ int           (*SSL_write)(SSL *, const void *, int);
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++ SSL_METHOD *  (*SSLv23_server_method)(void);
+++#else
+++SSL_METHOD *  (*TLS_server_method)(void);
+++#endif
++ X509 *        (*d2i_X509)(X509 **px, const unsigned char **in, int len);
++ void          (*X509_free)(X509 *a);
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++ void          (*x_sk_zero)(void *st);
+++#endif
++ void *        (*x_SSL_COMP_get_compression_methods)(void);
++ #endif
++ 
++@@ -208,7 +219,7 @@ static int maybeLoadCrypto(void) {
++   // The feature is currently disabled.
++   const char* path_libcrypto = NULL; // getenv ("SHELLINABOX_LIBCRYPTO_SO");
++   if (path_libcrypto == NULL)
++-    path_libcrypto = "libcrypto.so";
+++    path_libcrypto = DEFAULT_LIBCRYPTO_SO;
++ 
++   if (!crypto++) {
++ #ifdef RTLD_NOLOAD
++@@ -267,8 +278,8 @@ static void loadSSL(void) {
++   // The feature is currently disabled.
++   const char* path_libssl = NULL; // = getenv ("SHELLINABOX_LIBSSL_SO");
++   if (path_libssl == NULL)
++-    path_libssl = "libssl.so";
++-  check(!SSL_library_init);
+++    path_libssl = DEFAULT_LIBSSL_SO;
+++  check(!SSL_CTX_new);
++   struct {
++     union {
++       void *avoid_gcc_warning_about_type_punning;
++@@ -299,6 +310,9 @@ static void loadSSL(void) {
++     { { &SSL_CTX_new },                 "SSL_CTX_new" },
++     { { &SSL_CTX_set_cipher_list },     "SSL_CTX_set_cipher_list" },
++     { { &SSL_CTX_set_info_callback },   "SSL_CTX_set_info_callback" },
+++#if OPENSSL_VERSION_NUMBER > 0x10100000L
+++    { { &SSL_CTX_set_options },         "SSL_CTX_set_options" },
+++#endif
++     { { &SSL_CTX_use_PrivateKey_file }, "SSL_CTX_use_PrivateKey_file" },
++     { { &SSL_CTX_use_PrivateKey_ASN1 }, "SSL_CTX_use_PrivateKey_ASN1" },
++     { { &SSL_CTX_use_certificate_file },"SSL_CTX_use_certificate_file"},
++@@ -312,7 +326,9 @@ static void loadSSL(void) {
++     { { &SSL_get_servername },          "SSL_get_servername" },
++ #endif
++     { { &SSL_get_wbio },                "SSL_get_wbio" },
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++     { { &SSL_library_init },            "SSL_library_init" },
+++#endif
++     { { &SSL_new },                     "SSL_new" },
++     { { &SSL_read },                    "SSL_read" },
++ #ifdef HAVE_TLSEXT
++@@ -323,10 +339,16 @@ static void loadSSL(void) {
++     { { &SSL_set_ex_data },             "SSL_set_ex_data" },
++     { { &SSL_shutdown },                "SSL_shutdown" },
++     { { &SSL_write },                   "SSL_write" },
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++     { { &SSLv23_server_method },        "SSLv23_server_method" },
+++#else
+++    { { &TLS_server_method },           "TLS_server_method" },
+++#endif
++     { { &d2i_X509 },                    "d2i_X509" },
++     { { &X509_free },                   "X509_free" },
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++     { { &x_sk_zero },                   "sk_zero" }
+++#endif
++   };
++   for (unsigned i = 0; i < sizeof(symbols)/sizeof(symbols[0]); i++) {
++     if (!(*symbols[i].var = loadSymbol(path_libssl, symbols[i].fn))) {
++@@ -343,7 +365,9 @@ static void loadSSL(void) {
++   // ends
++ 
++ 
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++   SSL_library_init();
+++#endif
++   dcheck(!ERR_peek_error());
++   debug("[ssl] Loaded SSL suppport...");
++ }
++@@ -351,8 +375,12 @@ static void loadSSL(void) {
++ 
++ int serverSupportsSSL(void) {
++ #if defined(HAVE_OPENSSL) && !defined(HAVE_DLOPEN)
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++   return SSL_library_init();
++ #else
+++  return 1;
+++#endif
+++#else
++ #if defined(HAVE_OPENSSL)
++   // We want to call loadSSL() exactly once. For single-threaded applications,
++   // this is straight-forward. For threaded applications, we need to call
++@@ -372,8 +400,12 @@ int serverSupportsSSL(void) {
++       loadSSL();
++     }
++   }
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++   return !!SSL_library_init;
++ #else
+++  return 1;
+++#endif
+++#else
++   return 0;
++ #endif
++ #endif
++@@ -623,7 +655,11 @@ static void sslInfoCallback(const SSL *sslHndl, int ty
++ static SSL_CTX *sslMakeContext(void) {
++ 
++   SSL_CTX *context;
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++   check(context = SSL_CTX_new(SSLv23_server_method()));
+++#else
+++  check(context = SSL_CTX_new(TLS_server_method()));
+++#endif
++ 
++   long options  = SSL_OP_ALL;
++   options      |= SSL_OP_NO_SSLv2;
++@@ -641,6 +677,7 @@ static SSL_CTX *sslMakeContext(void) {
++   // Set default SSL options.
++   SSL_CTX_set_options(context, options);
++ 
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++   // Workaround for SSL_OP_NO_COMPRESSION with older OpenSSL versions.
++ #ifdef HAVE_DLOPEN
++   if (SSL_COMP_get_compression_methods) {
++@@ -649,6 +686,7 @@ static SSL_CTX *sslMakeContext(void) {
++ #elif OPENSSL_VERSION_NUMBER >= 0x00908000L
++   sk_SSL_COMP_zero(SSL_COMP_get_compression_methods());
++ #endif
+++#endif
++ 
++   // For Perfect Forward Secrecy (PFS) support we need to enable some additional
++   // SSL options, provide eliptic curve key object for handshake and add chipers
++@@ -657,21 +695,39 @@ static SSL_CTX *sslMakeContext(void) {
++   SSL_CTX_set_options(context, SSL_OP_SINGLE_ECDH_USE);
++   SSL_CTX_set_options(context, SSL_OP_CIPHER_SERVER_PREFERENCE);
++ 
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L /* openssl 1.1 does this automatically */
++   EC_KEY *ecKey;
++   check(ecKey   = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1));
++   SSL_CTX_set_tmp_ecdh(context, ecKey);
++   EC_KEY_free(ecKey);
+++#endif
++ 
++   debug("[ssl] Support for PFS enabled...");
++ #endif
++ 
++   check(SSL_CTX_set_cipher_list(context,
+++#ifdef SHELLINABOX_USE_CHACHA_FIRST
+++    "ECDHE-ECDSA-CHACHA20-POLY1305:"
+++    "ECDHE-RSA-CHACHA20-POLY1305:"
+++    "ECDHE-ECDSA-AES256-GCM-SHA384:"
++     "ECDHE-RSA-AES256-GCM-SHA384:"
+++#else
+++    "ECDHE-ECDSA-AES256-GCM-SHA384:"
+++    "ECDHE-RSA-AES256-GCM-SHA384:"
+++    "ECDHE-ECDSA-CHACHA20-POLY1305:"
+++    "ECDHE-RSA-CHACHA20-POLY1305:"
+++#endif
+++    "ECDHE-ECDSA-AES128-GCM-SHA256:"
++     "ECDHE-RSA-AES128-GCM-SHA256:"
+++    "ECDHE-ECDSA-AES256-SHA384:"
++     "ECDHE-RSA-AES256-SHA384:"
+++    "ECDHE-ECDSA-AES128-SHA256:"
++     "ECDHE-RSA-AES128-SHA256:"
+++    "ECDHE-ECDSA-AES256-SHA:"
++     "ECDHE-RSA-AES256-SHA:"
+++    "ECDHE-ECDSA-AES128-SHA:"
++     "ECDHE-RSA-AES128-SHA:"
+++    "ECDHE-ECDSA-DES-CBC3-SHA:"
++     "ECDHE-RSA-DES-CBC3-SHA:"
++     "HIGH:MEDIUM:!RC4:!aNULL:!MD5"));
++ 
+--- /dev/null	2019-12-30 21:11:36.000000000 +0600
++++ shellinabox-static/files/patch-libhttp_ssl.h	2019-12-30 21:13:55.658184000 +0600
+@@ -0,0 +1,102 @@
++--- libhttp/ssl.h.orig	2016-11-09 19:40:33 UTC
+++++ libhttp/ssl.h
++@@ -57,6 +57,7 @@
++ #include <openssl/bio.h>
++ #include <openssl/err.h>
++ #include <openssl/ssl.h>
+++#include <openssl/safestack.h>
++ #else
++ #undef HAVE_OPENSSL
++ typedef struct BIO        BIO;
++@@ -77,6 +78,17 @@ typedef struct X509       X509;
++ #endif
++ 
++ #if defined(HAVE_DLOPEN)
+++#if !defined(DEFAULT_LIBCRYPTO_SO) || !defined(DEFAULT_LIBSSL_SO)
+++#undef DEFAULT_LIBCRYPTO_SO
+++#undef DEFAULT_LIBSSL_SO
+++#ifdef SHLIB_VERSION_NUMBER
+++#define DEFAULT_LIBCRYPTO_SO "libcrypto.so." SHLIB_VERSION_NUMBER
+++#define DEFAULT_LIBSSL_SO "libssl.so." SHLIB_VERSION_NUMBER
+++#else
+++#define DEFAULT_LIBCRYPTO_SO "libcrypto.so"
+++#define DEFAULT_LIBSSL_SO "libssl.so"
+++#endif
+++#endif
++ extern long    (*x_BIO_ctrl)(BIO *, int, long, void *);
++ extern BIO_METHOD *(*x_BIO_f_buffer)(void);
++ extern void    (*x_BIO_free_all)(BIO *);
++@@ -99,6 +111,9 @@ extern SSL_CTX*(*x_SSL_CTX_new)(SSL_METHOD *);
++ extern int     (*x_SSL_CTX_set_cipher_list)(SSL_CTX *, const char *);
++ extern void    (*x_SSL_CTX_set_info_callback)(SSL_CTX *,
++                                               void (*)(const SSL *, int, int));
+++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+++extern unsigned long (*x_SSL_CTX_set_options)(SSL_CTX *, unsigned long);
+++#endif
++ extern int     (*x_SSL_CTX_use_PrivateKey_file)(SSL_CTX *, const char *, int);
++ extern int     (*x_SSL_CTX_use_PrivateKey_ASN1)(int, SSL_CTX *,
++                                                 const unsigned char *, long);
++@@ -112,7 +127,9 @@ extern void   *(*x_SSL_get_ex_data)(const SSL *, int);
++ extern BIO    *(*x_SSL_get_rbio)(const SSL *);
++ extern const char *(*x_SSL_get_servername)(const SSL *, int);
++ extern BIO    *(*x_SSL_get_wbio)(const SSL *);
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++ extern int     (*x_SSL_library_init)(void);
+++#endif
++ extern SSL    *(*x_SSL_new)(SSL_CTX *);
++ extern int     (*x_SSL_read)(SSL *, void *, int);
++ extern SSL_CTX*(*x_SSL_set_SSL_CTX)(SSL *, SSL_CTX *);
++@@ -121,10 +138,16 @@ extern void    (*x_SSL_set_bio)(SSL *, BIO *, BIO *);
++ extern int     (*x_SSL_set_ex_data)(SSL *, int, void *);
++ extern int     (*x_SSL_shutdown)(SSL *);
++ extern int     (*x_SSL_write)(SSL *, const void *, int);
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++ extern SSL_METHOD *(*x_SSLv23_server_method)(void);
+++#else
+++extern SSL_METHOD *(*x_TLS_server_method)(void);
+++#endif
++ extern X509 *  (*x_d2i_X509)(X509 **px, const unsigned char **in, int len);
++ extern void    (*x_X509_free)(X509 *a);
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++ extern void    (*x_sk_zero)(void *st);
+++#endif
++ extern void   *(*x_SSL_COMP_get_compression_methods)(void);
++ 
++ #define BIO_ctrl                     x_BIO_ctrl
++@@ -146,6 +169,9 @@ extern void   *(*x_SSL_COMP_get_compression_methods)(v
++ #define SSL_CTX_new                  x_SSL_CTX_new
++ #define SSL_CTX_set_cipher_list      x_SSL_CTX_set_cipher_list
++ #define SSL_CTX_set_info_callback    x_SSL_CTX_set_info_callback
+++#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+++#define SSL_CTX_set_options          x_SSL_CTX_set_options
+++#endif
++ #define SSL_CTX_use_PrivateKey_file  x_SSL_CTX_use_PrivateKey_file
++ #define SSL_CTX_use_PrivateKey_ASN1  x_SSL_CTX_use_PrivateKey_ASN1
++ #define SSL_CTX_use_certificate_file x_SSL_CTX_use_certificate_file
++@@ -157,7 +183,9 @@ extern void   *(*x_SSL_COMP_get_compression_methods)(v
++ #define SSL_get_rbio                 x_SSL_get_rbio
++ #define SSL_get_servername           x_SSL_get_servername
++ #define SSL_get_wbio                 x_SSL_get_wbio
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++ #define SSL_library_init             x_SSL_library_init
+++#endif
++ #define SSL_new                      x_SSL_new
++ #define SSL_read                     x_SSL_read
++ #define SSL_set_SSL_CTX              x_SSL_set_SSL_CTX
++@@ -166,10 +194,16 @@ extern void   *(*x_SSL_COMP_get_compression_methods)(v
++ #define SSL_set_ex_data              x_SSL_set_ex_data
++ #define SSL_shutdown                 x_SSL_shutdown
++ #define SSL_write                    x_SSL_write
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++ #define SSLv23_server_method         x_SSLv23_server_method
+++#else
+++#define TLS_server_method            x_TLS_server_method
+++#endif
++ #define d2i_X509                     x_d2i_X509
++ #define X509_free                    x_X509_free
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++ #define sk_zero                      x_sk_zero
+++#endif
++ #define SSL_COMP_get_compression_methods    x_SSL_COMP_get_compression_methods
++ 
++ #undef  BIO_set_buffer_read_data
+--- /dev/null	2019-12-30 21:11:36.000000000 +0600
++++ shellinabox-static/files/patch-libhttp_url.c	2019-12-30 21:13:55.658376000 +0600
+@@ -0,0 +1,12 @@
++--- libhttp/url.c.orig	2016-11-09 19:40:33 UTC
+++++ libhttp/url.c
++@@ -312,6 +312,9 @@ static void urlParsePostBody(struct URL *url,
++               }
++             }
++           }
+++        } else {
+++           warn("[http] broken multipart/form-data!");
+++           break;
++         }
++       }
++       if (lastPart) {
+--- /dev/null	2019-12-30 21:11:36.000000000 +0600
++++ shellinabox-static/files/patch-shellinabox_launcher.c	2019-12-30 21:13:55.658316000 +0600
+@@ -0,0 +1,13 @@
++--- shellinabox/launcher.c.orig	2016-11-09 19:40:33 UTC
+++++ shellinabox/launcher.c
++@@ -993,8 +993,8 @@ static pam_handle_t *internalLogin(struct Service *ser
++   if (service->authUser == 2 /* SSH */) {
++     // If connecting to a remote host, include that hostname
++     hostname                   = strrchr(service->cmdline, '@');
++-    if (!hostname || !strcmp(++hostname, "localhost")) {
++-      hostname                 = NULL;
+++    if (hostname) {
+++      hostname++;
++     }
++   }
++   struct utsname uts;
+--- /dev/null	2019-12-30 21:11:36.000000000 +0600
++++ shellinabox-static/files/patch-shellinabox_vt100.jspp	2019-12-30 21:13:55.658254000 +0600
+@@ -0,0 +1,22 @@
++--- shellinabox/vt100.jspp.orig	2018-11-13 14:31:22 UTC
+++++ shellinabox/vt100.jspp
++@@ -118,7 +118,8 @@ function VT100(container) {
++     '(?::[1-9][0-9]*)?' +
++ 
++     // Path.
++-    '(?:/(?:(?![/ \u00A0]|[,.)}"\u0027!]+[ \u00A0]|[,.)}"\u0027!]+$).)*)*|' +
+++    '(?:/(?:(?![/ \u00A0]|[,.)}"\u0027!]+[ \u00A0]|[,.)}"\u0027!]+$)' +
+++    '[-a-zA-Z0-9@:%_\+.~#?&//=])*)*|' +
++ 
++     (linkifyURLs <= 1 ? '' :
++     // Also support URLs without a protocol (assume "http").
++@@ -149,7 +150,8 @@ function VT100(container) {
++     '(?::[1-9][0-9]{0,4})?' +
++ 
++     // Path.
++-    '(?:/(?:(?![/ \u00A0]|[,.)}"\u0027!]+[ \u00A0]|[,.)}"\u0027!]+$).)*)*|') +
+++    '(?:/(?:(?![/ \u00A0]|[,.)}"\u0027!]+[ \u00A0]|[,.)}"\u0027!]+$)' +
+++    '[-a-zA-Z0-9@:%_\+.~#?&//=])*)*|') +
++ 
++     // In addition, support e-mail address. Optionally, recognize "mailto:"
++     '(?:mailto:)' + (linkifyURLs <= 1 ? '' : '?') +
+--- /dev/null	2019-12-30 21:22:56.000000000 +0600
++++ shellinabox-static/files/pkg-deinstall.in	2019-12-30 21:24:01.112430000 +0600
+@@ -0,0 +1,12 @@
++#! /bin/sh
++# $FreeBSD: head/www/shellinabox/files/pkg-deinstall.in 340719 2014-01-22 15:52:06Z mat $
++#
++
++PATH=/bin:/usr/bin:/usr/sbin
++
++if [ "$2" != "POST-DEINSTALL" ]; then
++    exit 0
++fi
++if [ -d %%PREFIX%%/etc/shellinabox ]; then
++        echo "===> You may delete '%%PREFIX%%/etc/shellinabox' if you want to remove the SSL certificate left."
++fi
+--- /dev/null	2019-12-30 21:22:56.000000000 +0600
++++ shellinabox-static/files/shellinaboxd.in	2019-12-30 21:24:01.112808000 +0600
+@@ -0,0 +1,73 @@
++#!/bin/sh
++
++# $FreeBSD: head/www/shellinabox/files/shellinaboxd.in 340872 2014-01-24 00:14:07Z mat $
++#
++# Shell in a Box Daemon startup script
++#
++# PROVIDE: shellinaboxd
++# REQUIRE: LOGIN
++# KEYWORD: shutdown
++
++#
++# Add the following to /etc/rc.conf[.local] to enable this service
++#
++# shellinaboxd_enable="YES"
++#
++# You can fine tune others variables too:
++# shellinaboxd_pidfile="/var/run/shellinabox.pid"
++# shellinaboxd_user="%%USERS%%"
++# shellinaboxd_group="%%GROUPS%%"
++# shellinaboxd_port="4200"
++# shellinaboxd_certdir="%%ETCDIR%%"
++# shellinaboxd_certfile=
++# 	Example: shellinaboxd_certfile="/your/cert.pem"
++# shellinaboxd_flags=
++
++shellinaboxd_precmd() {
++	if command -v check_namevarlist > /dev/null 2>&1; then
++		check_namevarlist fib && return 0
++	fi
++
++	${SYSCTL} net.fibs >/dev/null 2>&1 || return 0
++
++	shellinaboxd_fib=${shellinaboxd_fib:-"NONE"}
++	case "$shellinaboxd_fib" in
++	[Nn][Oo][Nn][Ee])
++		;;
++	*)
++		command="setfib -F ${shellinaboxd_fib} ${command}"
++		;;
++	esac
++} 
++
++. /etc/rc.subr
++
++name="shellinaboxd"
++rcvar=shellinaboxd_enable
++
++command="%%PREFIX%%/bin/${name}"
++start_precmd="shellinaboxd_precmd"
++
++load_rc_config $name
++
++shellinaboxd_enable=${shellinaboxd_enable:-"NO"}
++shellinaboxd_user=${shellinaboxd_user:-"%%USERS%%"}
++shellinaboxd_group=${shellinaboxd_group:-"%%GROUPS%%"}
++shellinaboxd_port=${shellinaboxd_port:-"4200"}
++shellinaboxd_certdir=${shellinaboxd_certdir:-"%%ETCDIR%%"}
++
++pidfile=${shellinaboxd_pidfile:-"/var/run/shellinaboxd.pid"}
++
++command_args="--user=${shellinaboxd_user} --group=${shellinaboxd_group} --port=${shellinaboxd_port} --background=${pidfile}"
++
++if [ "${shellinaboxd_certfile}" = "" ]; then
++	required_dirs="${shellinaboxd_certdir}"
++	command_args="$command_args --cert=${shellinaboxd_certdir}"
++else
++	command_args="$command_args --cert-fd=3 3< ${shellinaboxd_certfile}"
++fi
++
++# avoid unnecessary su(1) initiated by rc.subr
++unset shellinaboxd_user shellinaboxd_group
++
++run_rc_command "$1"

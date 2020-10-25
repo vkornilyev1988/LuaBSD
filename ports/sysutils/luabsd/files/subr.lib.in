@@ -1,0 +1,103 @@
+
+
+function read_file(path)
+    local file = io.open(path, "rb") -- r read mode and b binary mode
+    if not file then return nil end
+    local content = file:read "*a" -- *a or *all reads the whole file
+    file:close()
+    return content
+end
+
+function netmanager (ifaces, route, ifautoname)
+-- RENAME AUTO SEARCH IFACE
+
+	
+	if ifautoname  then 
+		 		iface_wait(next(ip.list()),20)
+		 		ip.rename(next(ip.list()), ifautoname)
+				ip.flags(next(ip.list()), "up")
+				iface_wait(ifautoname,20)
+	end
+
+if ifaces then
+	term.color(32)
+	for a,b in pairs(ifaces) do
+		local count = 1
+		if  b.create then
+			if b.create == true  and b.enable == true then
+				ip.create(a)
+			end
+		end
+	end
+	count = nil
+end
+
+-- RENAME IF IFACE NAME SET NEW IN SETTINGS
+if ifaces then
+	term.color(32)
+	for a,b in pairs(ifaces) do
+		local count = 1
+		if  b.name and b.enable == true then
+			iface_wait(a,20)
+			ip.rename(a, b.name)
+		end
+	end
+	count = nil
+	for a,b in pairs(ifaces) do
+		if b.enable == true and b.ip then
+			local count = 1
+			print("IFACE: ", a)
+			while b.ip[count] do
+					iface_wait(a,20)
+					if b.ip[count] then ip.set(a, b.ip[count].proto, b.ip[count].addr, b.ip[count].mask) end
+					count = count + 1
+			end
+		end
+	end
+	count = nil
+end
+	if route then
+    	if route.gw.enable == true and route.gw.ip4 then routeadd("gw",4,route.gw.ip4); print("Gateway ip4: " .. route.gw.ip4) end
+    	if route.gw.enable == true and route.gw.ip6 then routeadd("gw",6,route.gw.ip6); print("Gateway ip6: " .. route.gw.ip6) end
+    end
+    term.color(0)
+end
+
+function kernel_modules_load(varkldlist)
+    if varkldlist then 
+	   local thread_i
+		   for thread_i in string.gmatch(varkldlist, "[^%s]+") do
+		   		fork(system.kldload, thread_i)
+		   end
+	   thread_i = nil
+ 	end
+end
+
+
+function daemond:load (data)
+	if data then
+		local count = 1
+		while data[count] do
+			daemond:start (data[count])
+			count = count + 1
+		end
+	end
+end
+
+
+function rcload_json(path)
+	local file = read_file(path);
+	local cjdata = cjson.decode(file);
+	kernel_modules_load(cjdata.kldlist)
+	if cjdata.hostname then hostname(cjdata.hostname); print("Hostname: " .. cjdata.hostname) end
+	fork(netmanager, cjdata.ifaces, cjdata.route, cjdata.autoifname)
+	if cjdata.daemond then
+		daemond:load (cjdata.daemond)
+	end
+
+end
+
+	-- host = cjdata.hostname
+
+    --if host ~= nil then hostname(host) end
+    

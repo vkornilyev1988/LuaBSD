@@ -1,0 +1,2 @@
+#!/bin/lua
+pcall(system.cmd, "/bin/lua -i /lib/shell.lib")

@@ -1,0 +1,39 @@
+{
+	"ifaces":{
+		"re0":{
+		"name":"net0",
+		},
+		"em0":{
+		"name":"net0",
+		},
+		"net0":{
+			"type":1,
+			"ip":[
+				{
+					"proto":"4",
+					"addr":"6.6.6.220",
+					"mask":"255.255.255.0"
+				}
+			]
+		},
+		"tap0":{
+			"type":2,
+			"ip":[
+				{
+					"proto":"4",
+					"addr":"6.6.6.221",
+					"mask":"255.255.255.0"
+				}
+			]
+		}
+	},
+	"hostname":"LuaBSD",
+	"kldlist":"usb ohci uhci ehci if_re if_em",
+	"daemonds":{
+		"shellinaboxd":{
+			"enable":true,
+			"command":"/bin/shellinaboxd",
+			"args":"-p 4400 -t -s /:root:wheel:/root:/bin/shell"
+		}
+	}
+}

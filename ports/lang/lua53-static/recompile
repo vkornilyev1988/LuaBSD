@@ -1,0 +1,15 @@
+#!/bin/sh
+WRKSRC="$(make -v WRKSRC)/plugins/lanes"
+SRC=src/threading.h
+SRC2=src/tools.c
+PATCH="$(pwd)/files/PLUGIN_PATCH-PTHREADS"
+case ${1} in
+	edit) (make configure; cd ${WRKSRC} ; cp ${SRC} ${SRC}.orig; cp  ${SRC2}  ${SRC2}.orig; sublime ${SRC2}) ;;
+	make) (cp ${PATCH} /root/save_patch.copy; cd ${WRKSRC} ; diff -u ${SRC}.orig ${SRC}; diff -u ${SRC}.orig  ${SRC} > ${PATCH} ; diff -u Makefile.orig Makefile ; diff -u Makefile.orig Makefile >> ${PATCH}; diff -u src/Makefile.orig src/Makefile; diff -u src/Makefile.orig src/Makefile >> ${PATCH} ; diff -u ${SRC2}.orig ${SRC2} ; diff -u ${SRC2}.orig ${SRC2} >> ${PATCH})
+	      make clean all
+	;;
+	clean) make clean;;
+	check) ls  ${WRKSRC}/${SRC}; [ -f "${WRKSRC}/${SRC}.orig" ] && ls ${WRKSRC}/${SRC}.orig || true;;
+	roll) cp ${PATCH} /root/new_save.patch; cp -Rfv /root/save_patch.copy ${PATCH} ;;
+	    *) ./$0 clean; ./$0 edit ; echo check/roll/clean/edit/make; read TMP; ./$0 make;;
+esac
